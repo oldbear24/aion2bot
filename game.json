@@ -1,0 +1,81 @@
+{
+  "post_ttl_hours": 3,
+  "max_missing": 9,
+  "max_runs_per_leader": 5,
+  "dungeons": [
+    { "id": "abyssal-forge-ludra", "name": "Abyssal Forge: Ludra", "emoji": "🏛️", "party_size": 10, "description": "Sanctuary raid",
+      "modes": [
+        { "id": "conquest", "name": "Conquest", "gs": 2800 }
+      ] },
+
+    { "id": "dredgion-depot", "name": "Dredgion Depot", "emoji": "⚓", "party_size": 4, "description": "Subjugation",
+      "modes": [
+        { "id": "easy", "name": "Easy", "gs": 1000 },
+        { "id": "normal", "name": "Normal", "gs": 1500 },
+        { "id": "hard", "name": "Hard", "gs": 2000 }
+      ] },
+
+    { "id": "deus-research-base", "name": "Deus Research Base", "emoji": "💠", "party_size": 5, "description": "Transcendence",
+      "modes": [
+        { "id": "stage-1", "name": "Transcendence · Stage 1", "gs": 1600 },
+        { "id": "stage-2", "name": "Transcendence · Stage 2", "gs": 1900 },
+        { "id": "stage-3", "name": "Transcendence · Stage 3", "gs": 2200 },
+        { "id": "stage-4", "name": "Transcendence · Stage 4", "gs": 2500 }
+      ] },
+    { "id": "shattered-arkanis", "name": "Shattered Arkanis", "emoji": "💠", "party_size": 5, "description": "Transcendence",
+      "modes": [
+        { "id": "stage-1", "name": "Transcendence · Stage 1", "gs": 1600 },
+        { "id": "stage-2", "name": "Transcendence · Stage 2", "gs": 1900 },
+        { "id": "stage-3", "name": "Transcendence · Stage 3", "gs": 2200 },
+        { "id": "stage-4", "name": "Transcendence · Stage 4", "gs": 2500 }
+      ] },
+
+    { "id": "krao-cave", "name": "Krao Cave", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
+      "modes": [
+        { "id": "exploration", "name": "Exploration", "gs": 200 },
+        { "id": "conquest", "name": "Conquest", "gs": 700 },
+        { "id": "conquest-hard", "name": "Conquest [Hard]", "gs": 2600 }
+      ] },
+    { "id": "draupnir", "name": "Draupnir", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
+      "modes": [
+        { "id": "exploration", "name": "Exploration", "gs": 700 },
+        { "id": "conquest", "name": "Conquest", "gs": 700 },
+        { "id": "conquest-hard", "name": "Conquest [Hard]", "gs": 2600 }
+      ] },
+    { "id": "urugugu-canyon", "name": "Urugugu Canyon", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
+      "modes": [
+        { "id": "exploration", "name": "Exploration", "gs": 300 },
+        { "id": "conquest", "name": "Conquest", "gs": 1400 }
+      ] },
+    { "id": "fire-temple", "name": "Fire Temple", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
+      "modes": [
+        { "id": "exploration", "name": "Exploration", "gs": 500 },
+        { "id": "conquest", "name": "Conquest", "gs": 2100 }
+      ] },
+    { "id": "vakron-sky-island", "name": "Vakron Sky Island", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
+      "modes": [
+        { "id": "exploration", "name": "Exploration", "gs": 1400 },
+        { "id": "conquest", "name": "Conquest", "gs": 1400 }
+      ] },
+    { "id": "ferocious-horn-den", "name": "Ferocious Horn Den", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
+      "modes": [
+        { "id": "exploration", "name": "Exploration", "gs": 2100 },
+        { "id": "conquest", "name": "Conquest", "gs": 2100 }
+      ] }
+  ],
+  "roles": [
+    { "id": "tank", "name": "Tank", "emoji": "🟦" },
+    { "id": "healer", "name": "Healer", "emoji": "🟩" },
+    { "id": "dps", "name": "DPS", "emoji": "🟥" }
+  ],
+  "classes": [
+    { "id": "gladiator", "name": "Gladiator", "emoji": "⚔️", "roles": ["tank", "dps"] },
+    { "id": "templar", "name": "Templar", "emoji": "🛡️", "roles": ["tank"] },
+    { "id": "assassin", "name": "Assassin", "emoji": "🗡️", "roles": ["dps"] },
+    { "id": "ranger", "name": "Ranger", "emoji": "🏹", "roles": ["dps"] },
+    { "id": "sorcerer", "name": "Sorcerer", "emoji": "🔥", "roles": ["dps"] },
+    { "id": "spiritmaster", "name": "Spiritmaster", "emoji": "🌀", "roles": ["dps"] },
+    { "id": "cleric", "name": "Cleric", "emoji": "✨", "roles": ["healer"] },
+    { "id": "chanter", "name": "Chanter", "emoji": "🎶", "roles": ["healer", "dps"] }
+  ]
+}

@@ -1,0 +1,19 @@
+# Runs the released image. Put DISCORD_TOKEN in .env next to this file,
+# then: docker compose up -d. See DEPLOY.md.
+services:
+  aion2bot:
+    image: ghcr.io/oldbear24/aion2bot:${AION2BOT_VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - data:/data
+    # To change dungeons or GS requirements without a new release:
+    #   - ./game.json:/app/game.json:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  data:
