@@ -204,14 +204,15 @@ func (b *Bot) removePost(postID string) (deleted, failed int) {
 // deleteMessages deletes the bot's messages for a post and returns how many
 // couldn't be deleted. Messages that are already gone count as deleted.
 //
-// Threads go first and take the pings in them along. Deleting a thread
-// needs Manage Threads; without it the pings are deleted one by one and
-// the thread, which the bot started, is archived out of sight.
+// Threads go first and take the pings in them along: the bot may delete a
+// thread it started. If Discord refuses anyway, the thread is reopened so
+// its pings can be deleted (nothing in an archived thread can be), and
+// then archived again.
 func (b *Bot) deleteMessages(postID string, msgs []lfg.MessageRef) int {
 	var mu sync.Mutex
 	failed := 0
 	deleted := map[string]bool{}
-	var archive []string
+	var kept []string
 	forEach(msgs, func(m lfg.MessageRef) {
 		if !m.Thread {
 			return
@@ -223,19 +224,20 @@ func (b *Bot) deleteMessages(postID string, msgs []lfg.MessageRef) int {
 		case err == nil || isGone(err):
 			deleted[m.MessageID] = true
 		case restCode(err) == discordgo.ErrCodeMissingPermissions:
-			archive = append(archive, m.MessageID)
+			kept = append(kept, m.MessageID)
 		default:
 			log.Printf("delete thread %s of post %s: %v", m.MessageID, postID, err)
 			failed++
 		}
 	})
+	b.setArchived(postID, kept, false)
 
 	forEach(msgs, func(m lfg.MessageRef) {
 		if deleted[m.ChannelID] {
 			return
 		}
 		err := b.s.ChannelMessageDelete(m.ChannelID, m.MessageID)
-		// A ping in a thread that already archived itself stays out of sight.
+		// A ping in a thread that a moderator locked stays out of sight.
 		if err != nil && !isGone(err) && restCode(err) != discordgo.ErrCodePerformedOperationOnArchivedThread {
 			log.Printf("delete message %s of post %s: %v", m.MessageID, postID, err)
 			mu.Lock()
@@ -244,12 +246,17 @@ func (b *Bot) deleteMessages(postID string, msgs []lfg.MessageRef) int {
 		}
 	})
 
-	archived := true
-	forEach(archive, func(threadID string) {
+	b.setArchived(postID, kept, true)
+	return failed
+}
+
+// setArchived archives or reopens threads the bot started, which needs no
+// extra permission unless a moderator locked them.
+func (b *Bot) setArchived(postID string, threadIDs []string, archived bool) {
+	forEach(threadIDs, func(threadID string) {
 		_, err := b.s.ChannelEditComplex(threadID, &discordgo.ChannelEdit{Archived: &archived})
 		if err != nil && !isGone(err) && restCode(err) != discordgo.ErrCodePerformedOperationOnArchivedThread {
-			log.Printf("archive thread %s of post %s: %v", threadID, postID, err)
+			log.Printf("set archived=%v on thread %s of post %s: %v", archived, threadID, postID, err)
 		}
 	})
-	return failed
 }

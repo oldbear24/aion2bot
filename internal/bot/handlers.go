@@ -446,8 +446,13 @@ func first(values []string) string {
 }
 
 // setupChecks are the permissions /lfg-setup checks the bot has in the LFG
-// channel. Without the required ones nothing can be posted at all. key
-// names the permission and the reason for it in the catalog.
+// channel. Without the required ones nothing can be posted at all; without
+// the others pings go by DM. key names the permission and the reason for
+// it in the catalog.
+//
+// Nothing else is needed: the bot only edits and deletes its own messages
+// and threads, never reads or replies to messages, and answers commands,
+// buttons and forms through interactions, which need no permission.
 var setupChecks = []struct {
 	perm     int64
 	key      string
@@ -455,9 +460,7 @@ var setupChecks = []struct {
 }{
 	{discordgo.PermissionViewChannel, "perm.view", true},
 	{discordgo.PermissionSendMessages, "perm.send", true},
-	{discordgo.PermissionReadMessageHistory, "perm.history", false},
 	{discordgo.PermissionCreatePublicThreads | discordgo.PermissionSendMessagesInThreads, "perm.threads", false},
-	{discordgo.PermissionManageThreads, "perm.manage_threads", false},
 }
 
 // setupReport is the ✅/⚠️/❌ checklist of the bot's permissions in the

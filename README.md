@@ -35,7 +35,7 @@ It uses Discord's new components:
    The channel itself only holds the posts. A server's thread is started with its first ping, so posts nobody joins don't get one.
    After that, changes only edit the card, which never notifies anyone. If a server has no copy of the post, or the bot can't use threads there, a DM is sent instead.
 7. **Cleanup.** Posts expire after `post_ttl_hours`. A closed or expired post is deleted from every server, with the thread under it, 24 hours after it ended.
-   Deleting a thread needs *Manage Threads*; without it the bot deletes its pings and archives the thread instead.
+   The bot can delete threads it started; if Discord ever refuses, it deletes its pings and archives the thread instead.
 
 ## Languages
 
@@ -54,12 +54,13 @@ All texts live in `internal/i18n` (`en.go`, `cs.go`); a test checks both catalog
 2. Invite the bot to each server (replace `APP_ID`):
 
    ```
-   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=326417583104
+   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=309237648384
    ```
 
-   `326417583104` is View Channel + Send Messages + Read Message History + Create Public Threads + Send Messages in Threads + Manage Threads.
-   Use `326417714176` to also add *Mention @everyone, @here and All Roles*, which lets the bot ping a ping role that isn't set as mentionable.
-   Servers that invited the bot before threads need the three thread permissions added to its role; `/lfg-check` shows what's missing.
+   `309237648384` is all the bot needs: View Channel and Send Messages to post, Create Public Threads and Send Messages in Threads to ping in a thread under each post.
+   Use `309237779456` to also add *Mention @everyone, @here and All Roles*, which lets the bot ping a ping role that isn't set as mentionable.
+   Nothing else is needed: the bot only edits and deletes its own messages and threads, and buttons, forms and commands work through interactions.
+   Most servers give the thread permissions to @everyone, so older invites keep working; `/lfg-check` shows if one is missing.
 3. Run the released Docker image on a server: see **[DEPLOY.md](DEPLOY.md)**. In short:
 
    ```sh

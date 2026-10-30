@@ -295,8 +295,8 @@ func TestCardLinksUsersOnTheirOwnServer(t *testing.T) {
 }
 
 func TestSetupReport(t *testing.T) {
-	all := int64(discordgo.PermissionViewChannel | discordgo.PermissionSendMessages | discordgo.PermissionReadMessageHistory |
-		discordgo.PermissionCreatePublicThreads | discordgo.PermissionSendMessagesInThreads | discordgo.PermissionManageThreads)
+	all := int64(discordgo.PermissionViewChannel | discordgo.PermissionSendMessages |
+		discordgo.PermissionCreatePublicThreads | discordgo.PermissionSendMessagesInThreads)
 	if report, ready := setupReport(all, "c", nil, i18n.English); !ready || strings.ContainsAny(report, "❌⚠") {
 		t.Errorf("all permissions: ready %v\n%s", ready, report)
 	}
@@ -304,9 +304,6 @@ func TestSetupReport(t *testing.T) {
 	if report, ready := setupReport(all&^discordgo.PermissionSendMessagesInThreads, "c", nil, i18n.English); !ready ||
 		!strings.Contains(report, "⚠️ **Create Public Threads + Send Messages in Threads**") {
 		t.Errorf("missing thread permission should warn but still work: ready %v\n%s", ready, report)
-	}
-	if report, ready := setupReport(all&^discordgo.PermissionReadMessageHistory, "c", nil, i18n.English); !ready || !strings.Contains(report, "⚠️ **Read Message History**") {
-		t.Errorf("missing history should warn but still work: ready %v\n%s", ready, report)
 	}
 	if report, ready := setupReport(all&^discordgo.PermissionSendMessages, "c", nil, i18n.English); ready || !strings.Contains(report, "❌ **Send Messages**") {
 		t.Errorf("missing send must block setup: ready %v\n%s", ready, report)
