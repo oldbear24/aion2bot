@@ -16,8 +16,12 @@ import (
 
 const idProfileModal = "lfgp:save"
 
-// /profile lets a player save their main role, class and gear score. The
-// join form starts from it.
+// maxChar is the longest in-game character name the bot keeps.
+const maxChar = 24
+
+// /profile lets a player save their main role, class, character name and
+// gear score, which the join form starts from, plus their time zone and
+// whether they want reminders before runs start.
 func (b *Bot) cmdProfile(i *discordgo.Interaction) error {
 	userID, _ := interactionUser(i)
 	prof, _ := b.store.Profile(userID)
@@ -41,8 +45,9 @@ func (b *Bot) profileModal(prof lfg.Profile, l i18n.Lang) modal {
 				Label:       l.T("profile.choice"),
 				Description: l.T("profile.choice_help"),
 				Component: modalSelect{CustomID: "choice", Placeholder: l.T("profile.choice_ph"), MinValues: 1, MaxValues: 1,
-					Options: b.choiceOptions(b.game.Choices([]string{config.AnyID}), prof)},
+					Options: b.choiceOptions(b.game.Choices([]string{config.AnyID}), profileChoice(prof))},
 			},
+			charInput(prof.Char, l),
 			discordgo.Label{
 				Label:       l.T("profile.gs"),
 				Description: l.T("profile.gs_help"),
@@ -55,8 +60,52 @@ func (b *Bot) profileModal(prof lfg.Profile, l i18n.Lang) modal {
 				Component: modalSelect{CustomID: "tz", Placeholder: l.T("profile.tz_ph"), MinValues: 1, MaxValues: 1,
 					Options: zoneOptions(prof.TimeZone, l, time.Now())},
 			},
+			discordgo.Label{
+				Label:       l.T("profile.remind"),
+				Description: truncate(l.T("profile.remind_help", l.N(b.game.ReminderMinutes, "n.minutes")), 100),
+				Component: modalSelect{CustomID: "remind", MinValues: 1, MaxValues: 1, Options: []discordgo.SelectMenuOption{
+					{Label: l.T("profile.remind_on"), Value: "on", Emoji: emoji("⏰"), Default: !prof.SkipReminders},
+					{Label: l.T("profile.remind_off"), Value: "off", Emoji: emoji("🔕"), Default: prof.SkipReminders},
+				}},
+			},
 		},
 	}
+}
+
+// charInput asks for the in-game character name, in /profile and the join
+// form.
+func charInput(char string, l i18n.Lang) discordgo.Label {
+	optional := false
+	return discordgo.Label{
+		Label:       l.T("profile.char"),
+		Description: l.T("profile.char_help"),
+		Component: discordgo.TextInput{CustomID: "char", Style: discordgo.TextInputShort, Value: char,
+			Placeholder: l.T("profile.char_ph"), Required: &optional, MaxLength: maxChar},
+	}
+}
+
+// cleanChar keeps a typed character name on one line and without
+// backticks, which would break the code span it is shown in.
+func cleanChar(s string) string {
+	s = strings.Join(strings.Fields(strings.ReplaceAll(s, "`", "")), " ")
+	return truncate(s, maxChar)
+}
+
+// charTag shows a character name so it is easy to copy for an in-game
+// whisper or invite.
+func charTag(char string) string {
+	if char == "" {
+		return ""
+	}
+	return "`" + char + "`"
+}
+
+// charSuffix is " · `Name`" after a player's Discord name.
+func charSuffix(char string) string {
+	if char == "" {
+		return ""
+	}
+	return " · " + charTag(char)
 }
 
 func (b *Bot) onProfileSubmit(i *discordgo.Interaction) error {
@@ -76,27 +125,34 @@ func (b *Bot) onProfileSubmit(i *discordgo.Interaction) error {
 	if !slices.Contains(timeZones, tz) {
 		tz = ""
 	}
-	prof := lfg.Profile{UserID: userID, ClassID: classID, RoleID: roleID, GS: gs, TimeZone: tz}
+	prof := lfg.Profile{UserID: userID, ClassID: classID, RoleID: roleID, GS: gs, TimeZone: tz,
+		Char: cleanChar(first(values["char"])), SkipReminders: first(values["remind"]) == "off"}
 	if err := b.store.SetProfile(prof); err != nil {
 		b.reply(i, notice(colorClosed, errorText(err, l)))
 		return err
 	}
 	saved := b.choiceText(classID, roleID)
+	if prof.Char != "" {
+		saved += " · 🎮 " + charTag(prof.Char)
+	}
 	if gs > 0 {
 		saved += " · GS " + l.GS(gs)
 	}
 	if tz != "" {
 		saved += " · 🕒 " + l.T("tz."+tz)
 	}
+	if prof.SkipReminders {
+		saved += " · 🔕"
+	}
 	return b.reply(i, notice(colorOpen, l.T("profile.saved", saved)+l.T("profile.saved_hint")))
 }
 
-// rememberJoin keeps the player's profile current: the gear score always
-// follows their latest join, while a main role and class they saved
-// themselves stays.
+// rememberJoin keeps the player's profile current: the gear score and
+// character name follow their latest join, while a main role and class
+// they saved themselves stays.
 func (b *Bot) rememberJoin(pl lfg.Player) {
 	prof, ok := b.store.Profile(pl.UserID)
-	if ok && pl.GS == 0 {
+	if ok && pl.GS == 0 && pl.Char == "" {
 		return
 	}
 	if !ok {
@@ -105,21 +161,33 @@ func (b *Bot) rememberJoin(pl lfg.Player) {
 	if pl.GS > 0 {
 		prof.GS = pl.GS
 	}
+	if pl.Char != "" {
+		prof.Char = pl.Char
+	}
 	if err := b.store.SetProfile(prof); err != nil {
 		log.Printf("save profile of %s: %v", pl.UserID, err)
 	}
 }
 
+// profileChoice is the class/role pair a player saved, as menus use it.
+func profileChoice(prof lfg.Profile) []string {
+	if prof.ClassID == "" {
+		return nil
+	}
+	return []string{prof.ClassID + "|" + prof.RoleID}
+}
+
 // choiceOptions turns class/role combinations into menu options, with the
-// player's saved one pre-selected when it is on offer.
-func (b *Bot) choiceOptions(choices []config.Choice, prof lfg.Profile) []discordgo.SelectMenuOption {
+// selected "class|role" pairs pre-selected when they are on offer.
+func (b *Bot) choiceOptions(choices []config.Choice, selected []string) []discordgo.SelectMenuOption {
 	opts := make([]discordgo.SelectMenuOption, 0, len(choices))
 	for _, c := range choices {
+		value := c.Class.ID + "|" + c.Role.ID
 		opts = append(opts, discordgo.SelectMenuOption{
 			Label:   strings.TrimPrefix(c.Role.Name+" · "+c.Class.Name, " · "),
-			Value:   c.Class.ID + "|" + c.Role.ID,
+			Value:   value,
 			Emoji:   emoji(orDefault(c.Role.Emoji, c.Class.Emoji)),
-			Default: prof.ClassID == c.Class.ID && prof.RoleID == c.Role.ID,
+			Default: slices.Contains(selected, value),
 		})
 	}
 	return opts

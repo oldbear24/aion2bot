@@ -25,6 +25,8 @@ const (
 	keepEndedPosts = 24 * time.Hour
 	// Posts deleted per maintenance round, to stay clear of rate limits.
 	deleteBatch = 20
+	// The stats look back at most this far.
+	keepRuns = 90 * 24 * time.Hour
 )
 
 type Bot struct {
@@ -131,7 +133,7 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) registerCommands() error {
-	commands := commandList()
+	commands := commandList(b.game)
 
 	appID := b.s.State.User.ID
 	registered, err := b.s.ApplicationCommandBulkOverwrite(appID, b.devGuild, commands)
@@ -168,6 +170,12 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 		switch i.ApplicationCommandData().Name {
 		case "lfg":
 			err = b.cmdLFG(i)
+		case "lfg-find":
+			err = b.cmdFind(i)
+		case "lfg-notify":
+			err = b.cmdNotify(i)
+		case "lfg-stats":
+			err = b.cmdStats(i)
 		case "lfg-setup":
 			err = b.cmdSetup(i)
 		case "lfg-disable":
@@ -202,6 +210,10 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 		data := i.MessageComponentData()
 		if field, ok := strings.CutPrefix(data.CustomID, draftPrefix); ok {
 			err = b.onDraft(i, field, data.Values)
+		} else if field, ok := strings.CutPrefix(data.CustomID, alertPrefix); ok {
+			err = b.onAlert(i, field, data.Values)
+		} else if data.CustomID == idFindJoin {
+			err = b.onFindJoin(i, data.Values)
 		} else if action, postID, ok := parseCustomID(data.CustomID); ok {
 			err = b.onComponent(i, action, postID, data.Values)
 		}
@@ -237,7 +249,8 @@ func (b *Bot) onGuildDelete(_ *discordgo.Session, g *discordgo.GuildDelete) {
 	}
 }
 
-// maintenance expires old posts and deletes ended ones.
+// maintenance expires old posts, reminds parties of their start and
+// deletes ended posts.
 func (b *Bot) maintenance() {
 	defer close(b.done)
 	tick := time.NewTicker(maintenanceEvery)
@@ -247,7 +260,11 @@ func (b *Bot) maintenance() {
 		for _, id := range b.store.ExpireDue(now) {
 			b.scheduleSync(id)
 		}
+		for _, id := range b.store.DueReminders(b.game.Reminder(), now) {
+			b.remind(id)
+		}
 		b.deleteEnded(now.Add(-keepEndedPosts))
+		b.store.PruneRuns(now.Add(-keepRuns))
 		b.dropStaleDrafts(now)
 		b.members.dropStale(now)
 

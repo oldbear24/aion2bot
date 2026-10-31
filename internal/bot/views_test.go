@@ -31,22 +31,43 @@ func testBot(t *testing.T) *Bot {
 	return &Bot{game: game}
 }
 
+// iconBot uses application emojis for roles and classes, as in production,
+// where each is far longer than the emoji in game.json.
+func iconBot(t *testing.T) *Bot {
+	b := testBot(t)
+	icons := map[string]string{}
+	for _, r := range b.game.Roles {
+		icons[r.ID] = "<:" + r.ID + ":1234567890123456789>"
+	}
+	for _, c := range b.game.Classes {
+		icons[c.ID] = "<:" + c.ID + ":1234567890123456789>"
+	}
+	b.game.UseIcons(icons)
+	return b
+}
+
 // busyPost is the largest post the bot allows, with long names everywhere.
 func busyPost(b *Bot) lfg.Post {
 	long := strings.Repeat("W", 32)
+	char := strings.Repeat("C", maxChar)
 	dungeon := b.game.Dungeons[0]
 	p := lfg.Post{
-		ID: "abc123", LeaderID: "1", LeaderName: long, GuildName: strings.Repeat("G", 100),
+		ID: "abc123", LeaderID: "1", LeaderName: long, LeaderChar: char, GuildName: strings.Repeat("G", 100),
 		DungeonID: dungeon.ID, ModeID: dungeon.Modes[len(dungeon.Modes)-1].ID, MinGS: 99999,
 		LookingFor: []string{"tank", "healer", "dps", "gladiator", "chanter"}, Missing: 2,
 		Start: strings.Repeat("s", 60), Note: strings.Repeat("note *with* _markdown_\n", 13),
 		Status: lfg.StatusOpen, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
 	}
 	for n := range lfg.MaxApplicants {
-		p.Applicants = append(p.Applicants, lfg.Player{UserID: fmt.Sprint(100 + n), Name: long, ClassID: "cleric", RoleID: "healer", GS: 99999, GuildID: "g2", GuildName: p.GuildName})
+		pl := lfg.Player{UserID: fmt.Sprint(100 + n), Name: long, ClassID: "cleric", RoleID: "healer", GS: 99999, GuildID: "g2", GuildName: p.GuildName, Char: char}
+		if n < lfg.MaxApplicants-5 {
+			p.Applicants = append(p.Applicants, pl)
+		} else {
+			p.Reserves = append(p.Reserves, pl)
+		}
 	}
 	for n := range 9 {
-		p.Accepted = append(p.Accepted, lfg.Player{UserID: fmt.Sprint(200 + n), Name: long, ClassID: "gladiator", RoleID: "tank", GS: 99999, GuildID: "g2", GuildName: p.GuildName})
+		p.Accepted = append(p.Accepted, lfg.Player{UserID: fmt.Sprint(200 + n), Name: long, ClassID: "gladiator", RoleID: "tank", GS: 99999, GuildID: "g2", GuildName: p.GuildName, Char: char})
 	}
 	return p
 }
@@ -118,7 +139,7 @@ func checkSelects(t *testing.T, comps ...discordgo.MessageComponent) {
 }
 
 func TestPostCardFitsDiscordLimits(t *testing.T) {
-	b := testBot(t)
+	b := iconBot(t)
 	p := busyPost(b)
 	for _, l := range i18n.Langs {
 		for _, status := range []lfg.Status{lfg.StatusOpen, lfg.StatusFull, lfg.StatusClosed, lfg.StatusExpired} {
@@ -132,7 +153,7 @@ func TestPostCardFitsDiscordLimits(t *testing.T) {
 }
 
 func TestManagePanelFitsDiscordLimits(t *testing.T) {
-	b := testBot(t)
+	b := iconBot(t)
 	for _, l := range i18n.Langs {
 		p := busyPost(b)
 		panel := b.managePanel(p, l)

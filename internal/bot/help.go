@@ -40,10 +40,10 @@ func (b *Bot) helpPanel(l i18n.Lang, admin bool) discordgo.MessageComponent {
 	}
 	parts := []discordgo.MessageComponent{
 		text(l.T("help.title")),
-		text(l.T("help.find", b.cmd("profile"))),
+		text(l.T("help.find", b.cmd("lfg-find"), b.cmd("lfg-notify"), l.N(b.game.ReminderMinutes, "n.minutes"), b.cmd("profile"))),
 		divider(),
 		text(l.T("help.post", b.cmd("lfg"), strings.Join(roles, " · "),
-			b.game.MaxRunsPerLeader, l.N(b.game.PostTTLHours, "n.hours"))),
+			b.game.MaxRunsPerLeader, l.N(b.game.PostTTLHours, "n.hours"), b.cmd("lfg-stats"))),
 	}
 	if admin {
 		parts = append(parts, divider(),

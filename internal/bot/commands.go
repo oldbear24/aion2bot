@@ -1,14 +1,17 @@
 package bot
 
 import (
+	"strconv"
+
 	"github.com/bwmarrin/discordgo"
 
+	"aion2bot/internal/config"
 	"aion2bot/internal/i18n"
 )
 
 // commandList is every slash command, with descriptions in English
 // (Discord's default) and Czech.
-func commandList() []*discordgo.ApplicationCommand {
+func commandList(game *config.Game) []*discordgo.ApplicationCommand {
 	manageServer := int64(discordgo.PermissionManageGuild)
 	manageMessages := int64(discordgo.PermissionManageMessages)
 	guildOnly := &[]discordgo.InteractionContextType{discordgo.InteractionContextGuild}
@@ -19,9 +22,31 @@ func commandList() []*discordgo.ApplicationCommand {
 	for _, l := range i18n.Langs {
 		languages = append(languages, &discordgo.ApplicationCommandOptionChoice{Name: l.Name(), Value: string(l)})
 	}
+	dungeons := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(game.Dungeons))
+	for _, d := range game.Dungeons {
+		dungeons = append(dungeons, &discordgo.ApplicationCommandOptionChoice{Name: truncate(d.Name, 100), Value: d.ID})
+	}
+	periods := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(statsPeriods))
+	for _, days := range statsPeriods {
+		key := "stats.period." + strconv.Itoa(days)
+		periods = append(periods, &discordgo.ApplicationCommandOptionChoice{
+			Name: cmdText(key), NameLocalizations: *cmdTexts(key), Value: days,
+		})
+	}
 
 	return []*discordgo.ApplicationCommand{
 		command("lfg", "cmd.lfg", nil, guildOnly),
+		command("lfg-find", "cmd.find", nil, guildOnly,
+			option(discordgo.ApplicationCommandOptionString, "dungeon", "cmd.find.dungeon", false, func(o *discordgo.ApplicationCommandOption) {
+				o.Choices = dungeons
+			}),
+		),
+		command("lfg-notify", "cmd.notify", nil, guildOnly),
+		command("lfg-stats", "cmd.stats", nil, guildOnly,
+			option(discordgo.ApplicationCommandOptionInteger, "days", "cmd.stats.days", false, func(o *discordgo.ApplicationCommandOption) {
+				o.Choices = periods
+			}),
+		),
 		command("profile", "cmd.profile", nil, guildAndDM),
 		command("help", "cmd.help", nil, guildAndDM),
 		// Limited to moderators by default so the channel isn't spammed;

@@ -76,10 +76,13 @@ type Game struct {
 	PostTTLHours int `json:"post_ttl_hours"`
 	MaxMissing   int `json:"max_missing"`
 	// MaxRunsPerLeader caps how many open posts one player can have.
-	MaxRunsPerLeader int       `json:"max_runs_per_leader"`
-	Dungeons         []Dungeon `json:"dungeons"`
-	Roles            []Role    `json:"roles"`
-	Classes          []Class   `json:"classes"`
+	MaxRunsPerLeader int `json:"max_runs_per_leader"`
+	// ReminderMinutes is how long before a planned start the party is
+	// pinged.
+	ReminderMinutes int       `json:"reminder_minutes"`
+	Dungeons        []Dungeon `json:"dungeons"`
+	Roles           []Role    `json:"roles"`
+	Classes         []Class   `json:"classes"`
 }
 
 // Choice is one way a player can join: a class, and the role they fill
@@ -106,6 +109,9 @@ func LoadGame(path string) (*Game, error) {
 	}
 	if g.MaxRunsPerLeader <= 0 {
 		g.MaxRunsPerLeader = 5
+	}
+	if g.ReminderMinutes <= 0 {
+		g.ReminderMinutes = 15
 	}
 	g.MaxMissing = min(g.MaxMissing, maxSelectOptions)
 	if err := g.validate(); err != nil {
@@ -191,6 +197,8 @@ func checkEntry(kind, id, name string, seen map[string]bool) error {
 }
 
 func (g *Game) PostTTL() time.Duration { return time.Duration(g.PostTTLHours) * time.Hour }
+
+func (g *Game) Reminder() time.Duration { return time.Duration(g.ReminderMinutes) * time.Minute }
 
 func (g *Game) Dungeon(id string) (Dungeon, bool) {
 	for _, d := range g.Dungeons {

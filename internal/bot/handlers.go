@@ -81,9 +81,9 @@ func (b *Bot) onJoin(i *discordgo.Interaction, p lfg.Post, userID string) error 
 		err = lfg.ErrIsLeader
 	case p.Has(userID):
 		err = lfg.ErrAlreadyJoined
-	case p.Status != lfg.StatusOpen:
+	case !p.Active():
 		err = lfg.ErrNotOpen
-	case len(p.Applicants) >= lfg.MaxApplicants:
+	case p.Crowded():
 		err = lfg.ErrTooManyJoined
 	}
 	if err != nil {
@@ -93,8 +93,9 @@ func (b *Bot) onJoin(i *discordgo.Interaction, p lfg.Post, userID string) error 
 	return b.showModal(i, b.joinModal(p, prof, lang(i)))
 }
 
-// onJoinSubmit adds the player once they sent their role, class and gear
-// score.
+// onJoinSubmit adds the player once they sent their role, class, gear
+// score and character name: on the list for the leader, or as a reserve
+// when the party is full.
 func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	userID, name := interactionUser(i)
 	l := lang(i)
@@ -113,7 +114,7 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	}
 
 	pl := lfg.Player{UserID: userID, Name: name, ClassID: classID, RoleID: roleID, GS: gs,
-		GuildID: i.GuildID, GuildName: b.guildName(i.GuildID)}
+		GuildID: i.GuildID, GuildName: b.guildName(i.GuildID), Char: cleanChar(first(values["char"]))}
 	var pingLeader bool
 	p, err := b.store.UpdatePost(postID, func(p *lfg.Post) error {
 		if err := p.AddApplicant(pl); err != nil {
@@ -132,18 +133,27 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	b.rememberJoin(pl)
 
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
-	err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))))
+	reserve := p.IsReserve(userID)
+	if reserve {
+		err = b.reply(i, notice(colorFull, l.T("join.reserve", dungeon.Name, b.bringing(p, pl), len(p.Reserves))))
+	} else {
+		err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))))
+	}
 
 	// The leader is pinged for the first player only, on their own server;
 	// the note shows in the thread on every server, and the card shows the
 	// rest. Everyone who joins is added to the threads.
 	b.learnMembers(p, p.GuildIDs())
 	if pingLeader {
+		key := "ping.leader"
+		if reserve {
+			key = "ping.leader_reserve"
+		}
 		note := func(guildID string, l i18n.Lang) string {
 			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
-			return l.T("ping.leader", leader, b.applicantText(p, pl, guildID, l), dungeon.Name)
+			return l.T(key, leader, b.applicantText(p, pl, guildID, l), dungeon.Name)
 		}
-		if !b.announce(p, p.GuildID, []string{p.LeaderID}, true, note) {
+		if !b.announce(p, map[string][]string{p.GuildID: {p.LeaderID}}, true, note)[p.GuildID] {
 			ll := b.guildLang(p.GuildID)
 			b.dm(p.LeaderID, container(colorOpen,
 				text(ll.T("dm.leader", dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
@@ -157,7 +167,7 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 
 // applicantText describes a player as seen on one server's copy of a post.
 func (b *Bot) applicantText(p lfg.Post, pl lfg.Player, viewerGuildID string, l i18n.Lang) string {
-	s := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID)) + " (" + b.bringing(p, pl)
+	s := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID)) + charSuffix(pl.Char) + " (" + b.bringing(p, pl)
 	if pl.GS > 0 {
 		s += " · GS " + l.GS(pl.GS)
 	}
@@ -169,14 +179,18 @@ func (b *Bot) onLeave(i *discordgo.Interaction, p lfg.Post, userID string) error
 	if userID == p.LeaderID {
 		return b.reply(i, notice(colorClosed, l.T("leave.leader")))
 	}
-	// Leaving only updates the card; the leader was already pinged once.
+	// Leaving only updates the card; the leader was already pinged once. A
+	// reserve who takes the slot is welcomed like an accepted player.
+	var promoted []lfg.Player
 	p, err := b.store.UpdatePost(p.ID, func(p *lfg.Post) error {
 		if !p.Active() {
 			return lfg.ErrNotOpen
 		}
-		if _, _, ok := p.Remove(userID); !ok {
+		r, ok := p.Remove(userID)
+		if !ok {
 			return lfg.ErrNotInParty
 		}
+		promoted = firstPings(p, r)
 		return nil
 	})
 	if err != nil {
@@ -185,7 +199,22 @@ func (b *Bot) onLeave(i *discordgo.Interaction, p lfg.Post, userID string) error
 	b.scheduleSync(p.ID)
 
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
-	return b.reply(i, notice(colorClosed, l.T("leave.done", dungeon.Name)))
+	err = b.reply(i, notice(colorClosed, l.T("leave.done", dungeon.Name)))
+	b.welcome(p, promoted, true)
+	return err
+}
+
+// firstPings marks the reserves that moved up into the party as pinged
+// and returns those who weren't before. A reserve removed in the same go
+// is left out.
+func firstPings(p *lfg.Post, removals ...lfg.Removal) []lfg.Player {
+	var fresh []lfg.Player
+	for _, r := range removals {
+		if r.Promoted != nil && p.InParty(r.Promoted.UserID) && p.MarkPinged(r.Promoted.UserID) {
+			fresh = append(fresh, *r.Promoted)
+		}
+	}
+	return fresh
 }
 
 func (b *Bot) onAccept(i *discordgo.Interaction, p lfg.Post, userIDs []string) error {
@@ -204,35 +233,59 @@ func (b *Bot) onAccept(i *discordgo.Interaction, p lfg.Post, userIDs []string) e
 		}
 		return nil
 	})
-	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
-	where := "**" + dungeon.Name + "**"
-	if m, ok := dungeon.Mode(p.ModeID); ok {
-		where += " (" + m.Name + ")"
+	b.welcome(p, fresh, false)
+	return err
+}
+
+// welcome pings players who just got into the party, each on the server
+// they joined from; the note shows in the thread on every server, in its
+// language. promoted says they moved up from the reserves.
+func (b *Bot) welcome(p lfg.Post, players []lfg.Player, promoted bool) {
+	if len(players) == 0 {
+		return
 	}
-	if len(fresh) == 0 {
-		return err
+	key, dmKey := "ping.accepted", "dm.accepted"
+	if promoted {
+		key, dmKey = "ping.promoted", "dm.promoted"
 	}
+	where := b.runName(p)
 	b.learnMembers(p, p.GuildIDs())
-	for _, pl := range fresh {
-		// Each player is pinged on the server they joined from; the note
-		// shows in the thread on every server, in its language.
+	for _, pl := range players {
 		note := func(guildID string, l i18n.Lang) string {
 			player := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, guildID))
 			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
-			return l.T("ping.accepted", player, leader, where, b.bringing(p, pl), startText(p.StartAt, p.Start, l))
+			return l.T(key, player, leader, where, b.bringing(p, pl), startText(p.StartAt, p.Start, l)) + leaderCharLine(p, l)
 		}
-		if !b.announce(p, pl.GuildID, []string{pl.UserID}, true, note) {
+		if !b.announce(p, map[string][]string{pl.GuildID: {pl.UserID}}, true, note)[pl.GuildID] {
 			pll := b.guildLang(pl.GuildID)
-			b.dm(pl.UserID, notice(colorFull, pll.T("dm.accepted", escape(p.LeaderName), p.LeaderID, where, b.bringing(p, pl),
-				startText(p.StartAt, p.Start, pll))))
+			b.dm(pl.UserID, notice(colorFull, pll.T(dmKey, escape(p.LeaderName), p.LeaderID, where, b.bringing(p, pl),
+				startText(p.StartAt, p.Start, pll))+leaderCharLine(p, pll)))
 		}
 	}
 	// They joined the threads as applicants; this covers anyone who wasn't
 	// added then.
 	if p, ok := b.store.Post(p.ID); ok {
-		b.addToThreads(p.Messages, fresh)
+		b.addToThreads(p.Messages, players)
 	}
-	return err
+}
+
+// runName is "**Krao Cave** (Conquest)".
+func (b *Bot) runName(p lfg.Post) string {
+	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
+	s := "**" + dungeon.Name + "**"
+	if m, ok := dungeon.Mode(p.ModeID); ok {
+		s += " (" + m.Name + ")"
+	}
+	return s
+}
+
+// leaderCharLine tells accepted players whom to ask for the invite in
+// game, when the leader saved their character name.
+func leaderCharLine(p lfg.Post, l i18n.Lang) string {
+	if p.LeaderChar == "" {
+		return ""
+	}
+	return "\n" + l.T("ping.leader_char", charTag(p.LeaderChar))
 }
 
 // onEditSubmit applies a new gear score, start and note from the form on
@@ -289,7 +342,7 @@ func (b *Bot) announceChanges(before, after lfg.Post) {
 		return
 	}
 	b.learnMembers(after, after.GuildIDs())
-	b.announce(after, "", nil, false, func(guildID string, l i18n.Lang) string {
+	b.announce(after, nil, false, func(guildID string, l i18n.Lang) string {
 		leader := who(after.LeaderID, after.LeaderName, b.mentionable(after.LeaderID, after.GuildID, guildID))
 		lines := []string{l.T("thread.edited", leader)}
 		if startChanged {
@@ -310,34 +363,34 @@ func (b *Bot) announceChanges(before, after lfg.Post) {
 }
 
 func (b *Bot) onKick(i *discordgo.Interaction, p lfg.Post, userIDs []string) error {
-	type removal struct {
-		pl          lfg.Player
-		wasAccepted bool
-	}
-	var removed []removal
+	var removed []lfg.Removal
+	var promoted []lfg.Player
 	p, err := b.leaderChange(i, p.ID, func(p *lfg.Post) error {
 		if !p.Active() {
 			return lfg.ErrNotOpen
 		}
+		removed = removed[:0]
 		for _, id := range userIDs {
-			if pl, wasAccepted, ok := p.Remove(id); ok {
-				removed = append(removed, removal{pl, wasAccepted})
+			if r, ok := p.Remove(id); ok {
+				removed = append(removed, r)
 			}
 		}
 		if len(removed) == 0 {
 			return lfg.ErrNotInParty
 		}
+		promoted = firstPings(p, removed...)
 		return nil
 	})
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	for _, r := range removed {
-		pll := b.guildLang(r.pl.GuildID)
+		pll := b.guildLang(r.Player.GuildID)
 		msg := pll.T("dm.declined", escape(p.LeaderName), dungeon.Name)
-		if r.wasAccepted {
+		if r.WasAccepted {
 			msg = pll.T("dm.removed", escape(p.LeaderName), dungeon.Name)
 		}
-		b.dm(r.pl.UserID, notice(colorClosed, msg))
+		b.dm(r.Player.UserID, notice(colorClosed, msg))
 	}
+	b.welcome(p, promoted, true)
 	return err
 }
 
@@ -459,7 +512,7 @@ func manageRow(postID string, l i18n.Lang) discordgo.ActionsRow {
 // playerLine is a player as the leader sees them: name, mention, role,
 // class and home server.
 func (b *Bot) playerLine(p lfg.Post, pl lfg.Player, l i18n.Lang) string {
-	s := l.T("player.as", escape(pl.Name), pl.UserID, b.bringing(p, pl))
+	s := l.T("player.as", escape(pl.Name)+charSuffix(pl.Char), pl.UserID, b.bringing(p, pl))
 	if pl.GS > 0 {
 		s += " (GS " + l.GS(pl.GS) + ")"
 	}

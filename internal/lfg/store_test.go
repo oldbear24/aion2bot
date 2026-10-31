@@ -52,16 +52,18 @@ func TestStorePostsRoundTrip(t *testing.T) {
 		t.Fatalf("rolled back update: err %v missing %d", err, got.Missing)
 	}
 
-	// Players keep their order and their accepted state.
+	// Players keep their order, their state and their characters.
 	p, err = s.UpdatePost(p.ID, func(p *Post) error {
+		p.LeaderChar = "Lea"
 		for _, id := range []string{"a", "b", "c"} {
-			if err := p.AddApplicant(Player{UserID: id, ClassID: "cleric", RoleID: "healer", GS: 3000, GuildID: "g1"}); err != nil {
+			if err := p.AddApplicant(Player{UserID: id, ClassID: "cleric", RoleID: "healer", GS: 3000, GuildID: "g1", Char: "Char" + id}); err != nil {
 				return err
 			}
 		}
 		_, err := p.Accept([]string{"b"})
 		p.MarkPinged("b")
-		return err
+		p.AdjustMissing(-2, 9)
+		return errors.Join(err, p.AddApplicant(Player{UserID: "d", ClassID: "ranger", RoleID: "dps"}))
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,10 +89,14 @@ func TestStorePostsRoundTrip(t *testing.T) {
 		t.Fatalf("replies must not count as copies of the card: %v", got.Messages)
 	case !got.Messages[0].Thread:
 		t.Fatalf("the card's thread was lost: %+v", got.Messages[0])
-	case len(got.Accepted) != 1 || got.Accepted[0].UserID != "b" || got.Missing != 2:
+	case len(got.Accepted) != 1 || got.Accepted[0].UserID != "b" || got.Missing != 0:
 		t.Fatalf("accepted %v missing %d", got.Accepted, got.Missing)
-	case len(got.Applicants) != 2 || got.Applicants[0].UserID != "a" || got.Applicants[1].GS != 3000:
+	case len(got.Applicants) != 2 || got.Applicants[0].UserID != "a" || got.Applicants[1].GS != 3000 || got.Applicants[1].Char != "Charc":
 		t.Fatalf("applicants %v", got.Applicants)
+	case len(got.Reserves) != 1 || got.Reserves[0].UserID != "d":
+		t.Fatalf("reserves %v", got.Reserves)
+	case got.LeaderChar != "Lea" || got.FilledAt.UnixMilli() != p.FilledAt.UnixMilli() || got.FilledAt.IsZero():
+		t.Fatalf("leader character %q, filled %v", got.LeaderChar, got.FilledAt)
 	case !slices.Equal(got.LookingFor, []string{"tank", "cleric"}) || !slices.Equal(got.Pinged, []string{"b"}):
 		t.Fatalf("looking for %v, pinged %v", got.LookingFor, got.Pinged)
 	case !got.StartAt.Equal(p.StartAt):
@@ -187,6 +193,117 @@ func TestExpireAndDeleteEnded(t *testing.T) {
 	}
 }
 
+func TestRemindersAreDueOnce(t *testing.T) {
+	s, _ := openTestStore(t)
+	now := time.Now()
+	window := 15 * time.Minute
+	create := func(start time.Time) Post {
+		p := newPost(2)
+		p.StartAt, p.ExpiresAt = start, now.Add(5*time.Hour)
+		p, err := s.CreatePost(p, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	soon := create(now.Add(10 * time.Minute))
+	create(now.Add(time.Hour))
+	create(now.Add(-time.Minute)) // already started
+	create(time.Time{})           // starts when full
+	closed := create(now.Add(5 * time.Minute))
+	s.UpdatePost(closed.ID, func(p *Post) error { return p.Close(StatusClosed, now) })
+
+	if ids := s.DueReminders(window, now); !slices.Equal(ids, []string{soon.ID}) {
+		t.Fatalf("due: %v, want %v", ids, soon.ID)
+	}
+	if ids := s.DueReminders(window, now); len(ids) != 0 {
+		t.Fatalf("reminded twice: %v", ids)
+	}
+	// Marking it doesn't count as a change, and later changes keep it.
+	p, _ := s.UpdatePost(soon.ID, func(p *Post) error { return p.AdjustMissing(-1, 9) })
+	if !p.Reminded || p.Revision != soon.Revision+1 {
+		t.Fatalf("reminded %v revision %d", p.Reminded, p.Revision)
+	}
+}
+
+func TestRunsKeepEndedPosts(t *testing.T) {
+	s, _ := openTestStore(t)
+	now := time.Now()
+	create := func(guildID, dungeonID string) Post {
+		p := newPost(1)
+		p.GuildID, p.DungeonID, p.CreatedAt, p.ExpiresAt = guildID, dungeonID, now, now.Add(time.Hour)
+		p, err := s.CreatePost(p, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	filled := create("g1", "krao")
+	s.UpdatePost(filled.ID, func(p *Post) error {
+		p.AddApplicant(Player{UserID: "a"})
+		p.Accept([]string{"a"})
+		return p.Close(StatusClosed, now)
+	})
+	expired := create("g2", "fire")
+	open := create("g1", "fire")
+	create("elsewhere", "krao")
+	s.UpdatePost(open.ID, func(p *Post) error { return p.AddApplicant(Player{UserID: "b"}) })
+	s.ExpireDue(now.Add(30 * time.Minute)) // nothing yet
+	s.UpdatePost(expired.ID, func(p *Post) error { p.ExpiresAt = now.Add(-time.Second); return nil })
+	s.ExpireDue(now)
+
+	// Deleting a post keeps its run.
+	s.DeletePost(filled.ID)
+	s.DeletePost(expired.ID)
+
+	runs := s.Runs([]string{"g1", "g2"}, now.Add(-time.Hour))
+	got := map[Status]Run{}
+	for _, r := range runs {
+		got[r.Status] = r
+	}
+	switch {
+	case len(runs) != 3:
+		t.Fatalf("runs %+v", runs)
+	case got[StatusClosed].DungeonID != "krao" || got[StatusClosed].FilledAt.IsZero() || got[StatusClosed].Players != 1:
+		t.Fatalf("closed run %+v", got[StatusClosed])
+	case got[StatusExpired].GuildID != "g2" || !got[StatusExpired].FilledAt.IsZero():
+		t.Fatalf("expired run %+v", got[StatusExpired])
+	case got[StatusOpen].Players != 1:
+		t.Fatalf("open run %+v", got[StatusOpen])
+	}
+	if runs := s.Runs([]string{"g1", "g2"}, now.Add(time.Hour)); len(runs) != 0 {
+		t.Fatalf("runs from before the period: %+v", runs)
+	}
+	s.PruneRuns(now.Add(time.Hour))
+	if runs := s.Runs([]string{"g1", "g2"}, now.Add(-time.Hour)); len(runs) != 1 || runs[0].Status != StatusOpen {
+		t.Fatalf("after pruning: %+v", runs)
+	}
+}
+
+func TestAlerts(t *testing.T) {
+	s, _ := openTestStore(t)
+	if _, ok := s.Alert("u1"); ok {
+		t.Fatal("alert before saving")
+	}
+	want := Alert{UserID: "u1", GuildID: "g1", Lang: "cs", Dungeons: []string{"krao", "fire"}, Choices: []string{"cleric|healer"}}
+	s.SetAlert(want)
+	s.SetAlert(Alert{UserID: "u2", GuildID: "g2", Dungeons: []string{"krao"}})
+	got, ok := s.Alert("u1")
+	if !ok || got.GuildID != "g1" || got.Lang != "cs" || !slices.Equal(got.Dungeons, want.Dungeons) || !slices.Equal(got.Choices, want.Choices) || !got.On() {
+		t.Fatalf("got %+v", got)
+	}
+	if u2, _ := s.Alert("u2"); u2.On() || u2.Lang != "en" || u2.Choices == nil {
+		t.Fatalf("alert without choices: %+v", u2)
+	}
+	if in := s.AlertsIn([]string{"g1", "g3"}); len(in) != 1 || in[0].UserID != "u1" {
+		t.Fatalf("alerts in g1: %+v", in)
+	}
+	s.RemoveAlert("u1")
+	if _, ok := s.Alert("u1"); ok {
+		t.Fatal("alert left after removing")
+	}
+}
+
 func TestNetworksDecideWherePostsGo(t *testing.T) {
 	s, _ := openTestStore(t)
 	for _, g := range []string{"a", "b", "c"} {
@@ -261,7 +378,7 @@ func TestProfiles(t *testing.T) {
 	if _, ok := s.Profile("u1"); ok {
 		t.Fatal("profile before saving")
 	}
-	want := Profile{UserID: "u1", ClassID: "gladiator", RoleID: "tank", GS: 2900, TimeZone: "Europe/Prague"}
+	want := Profile{UserID: "u1", ClassID: "gladiator", RoleID: "tank", GS: 2900, TimeZone: "Europe/Prague", Char: "Lea", SkipReminders: true}
 	if err := s.SetProfile(want); err != nil {
 		t.Fatal(err)
 	}

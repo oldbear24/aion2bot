@@ -20,8 +20,9 @@ const (
 	colorFull   = 0x3498DB
 	colorClosed = 0x747F8D
 
-	// Keeps the card well under the 4000 character limit for text displays.
-	maxListed = 20
+	// Keeps the card well under the 4000 character limit for text displays,
+	// whatever the names and icons on it.
+	rosterBudget = 2800
 )
 
 // Post components use "lfg:<action>:<postID>".
@@ -90,7 +91,7 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	case lfg.StatusOpen:
 		status = l.T("card.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
 	case lfg.StatusFull:
-		status = l.T("card.full") + partyFill(dungeon, p)
+		status = l.T("card.full") + partyFill(dungeon, p) + l.T("card.reserves_welcome")
 	case lfg.StatusClosed:
 		status = l.T("card.closed")
 	case lfg.StatusExpired:
@@ -102,7 +103,8 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	}
 	header += "\n" + status
 
-	info := l.T("card.leader") + who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
+	info := l.T("card.leader") + who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID)) +
+		charSuffix(p.LeaderChar)
 	if p.GuildName != "" && p.GuildID != guildID {
 		info += " · *" + escape(truncate(p.GuildName, 40)) + "*"
 	}
@@ -122,9 +124,13 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	}
 	body = append(body, divider(), text(b.rosterText(p, guildID, false, l)))
 
+	join := discordgo.Button{CustomID: customID(actJoin, p.ID), Label: l.T("card.join"), Style: discordgo.SuccessButton,
+		Emoji: emoji("✋"), Disabled: !p.Active()}
+	if p.Status == lfg.StatusFull {
+		join.Label, join.Style, join.Emoji = l.T("card.join_reserve"), discordgo.PrimaryButton, emoji("🪑")
+	}
 	body = append(body, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-		discordgo.Button{CustomID: customID(actJoin, p.ID), Label: l.T("card.join"), Style: discordgo.SuccessButton,
-			Emoji: emoji("✋"), Disabled: p.Status != lfg.StatusOpen},
+		join,
 		discordgo.Button{CustomID: customID(actLeave, p.ID), Label: l.T("card.leave"), Style: discordgo.SecondaryButton,
 			Disabled: !p.Active()},
 		discordgo.Button{CustomID: customID(actManage, p.ID), Label: l.T("card.manage"), Style: discordgo.SecondaryButton,
@@ -177,9 +183,10 @@ func partyFill(d config.Dungeon, p lfg.Post) string {
 	return " (" + strconv.Itoa(max(1, size-p.Missing)) + "/" + strconv.Itoa(size) + ")"
 }
 
-// rosterText lists the party and the applicants, each marked with the
-// colour of their role, as seen on viewerGuildID's copy of the post. The
-// leader's private panel passes leaderView to link every player.
+// rosterText lists the party, the applicants and the reserves, each marked
+// with the colour of their role, as seen on viewerGuildID's copy of the
+// post. The leader's private panel passes leaderView to link every player.
+// Players who don't fit in rosterBudget are counted instead.
 func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i18n.Lang) string {
 	line := func(pl lfg.Player) string {
 		c := b.game.ClassOrUnknown(pl.ClassID)
@@ -189,7 +196,7 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 		} else {
 			s += who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID))
 		}
-		s += " — " + strings.TrimSpace(c.Emoji+" "+c.Name)
+		s += charSuffix(pl.Char) + " — " + strings.TrimSpace(c.Emoji+" "+c.Name)
 		if pl.GS > 0 {
 			s += " · GS " + l.GS(pl.GS)
 		}
@@ -198,14 +205,19 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 		}
 		return s
 	}
+	room := rosterBudget
 	list := func(players []lfg.Player) string {
 		var sb strings.Builder
 		for n, pl := range players {
-			if n == maxListed {
-				sb.WriteString(l.T("roster.more", len(players)-maxListed))
-				break
+			s := "\n" + line(pl)
+			if size := utf8.RuneCountInString(s); size <= room {
+				room -= size
+				sb.WriteString(s)
+				continue
 			}
-			sb.WriteString("\n" + line(pl))
+			room = 0
+			sb.WriteString(l.T("roster.more", len(players)-n))
+			break
 		}
 		return sb.String()
 	}
@@ -215,9 +227,12 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 		sb.WriteString(l.T("roster.in_party", len(p.Accepted)) + list(p.Accepted) + "\n")
 	}
 	if len(p.Applicants) > 0 {
-		sb.WriteString(l.T("roster.waiting", len(p.Applicants)) + list(p.Applicants))
-	} else if p.Status == lfg.StatusOpen {
+		sb.WriteString(l.T("roster.waiting", len(p.Applicants)) + list(p.Applicants) + "\n")
+	} else if p.Status == lfg.StatusOpen && len(p.Reserves) == 0 {
 		sb.WriteString(l.T("roster.empty_open"))
+	}
+	if len(p.Reserves) > 0 {
+		sb.WriteString(l.T("roster.reserves", len(p.Reserves)) + list(p.Reserves))
 	}
 	return orDefault(strings.TrimSpace(sb.String()), l.T("roster.empty"))
 }
@@ -343,15 +358,19 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 	if required {
 		gsHelp = l.T("join.gs_required", l.GS(p.MinGS))
 	}
+	title := l.T("join.title", dungeon.Name)
+	if p.Status == lfg.StatusFull {
+		title = l.T("join.title_reserve", dungeon.Name)
+	}
 	return modal{
 		CustomID: customID(actJoinForm, p.ID),
-		Title:    truncate(l.T("join.title", dungeon.Name), 45),
+		Title:    truncate(title, 45),
 		Components: []discordgo.MessageComponent{
 			discordgo.Label{
 				Label:       l.T("join.choice"),
 				Description: truncate(l.T("join.looking", b.lookingForNames(p.LookingFor, l)), 100),
 				Component: modalSelect{CustomID: "choice", Placeholder: l.T("join.choice_ph"),
-					MinValues: 1, MaxValues: 1, Options: b.choiceOptions(b.game.Choices(p.LookingFor), prof)},
+					MinValues: 1, MaxValues: 1, Options: b.choiceOptions(b.game.Choices(p.LookingFor), profileChoice(prof))},
 			},
 			discordgo.Label{
 				Label:       l.T("join.gs"),
@@ -359,6 +378,7 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 				Component: discordgo.TextInput{CustomID: "gs", Style: discordgo.TextInputShort, Value: gs,
 					Placeholder: l.T("join.gs_ph"), Required: &required, MaxLength: 8},
 			},
+			charInput(prof.Char, l),
 		},
 	}
 }
@@ -390,11 +410,11 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 		return container(statusColor(p.Status), comps...)
 	}
 
-	if len(p.Applicants) > 0 && p.Missing > 0 {
+	if waiting := p.Waiting(); len(waiting) > 0 && p.Missing > 0 {
 		comps = append(comps, selectRow(customID(actAccept, p.ID), l.T("manage.accept_ph"),
-			min(len(p.Applicants), p.Missing), b.playerOptions(p, p.Applicants, l)))
+			min(len(waiting), p.Missing), b.playerOptions(p, waiting, l)))
 	}
-	if all := slices.Concat(p.Accepted, p.Applicants); len(all) > 0 {
+	if all := slices.Concat(p.Accepted, p.Waiting()); len(all) > 0 {
 		comps = append(comps, selectRow(customID(actKick, p.ID), l.T("manage.kick_ph"),
 			len(all), b.playerOptions(p, all, l)))
 	}
@@ -618,8 +638,15 @@ func (b *Bot) playerOptions(p lfg.Post, players []lfg.Player, l i18n.Lang) []dis
 		if pl.GuildName != "" {
 			desc += " · " + pl.GuildName
 		}
+		label := pl.Name
+		if pl.Char != "" {
+			label += " · " + pl.Char
+		}
+		if p.IsReserve(pl.UserID) {
+			label = "🪑 " + label
+		}
 		opts = append(opts, discordgo.SelectMenuOption{
-			Label: truncate(pl.Name, 100), Value: pl.UserID, Description: truncate(desc, 100), Emoji: emoji(icon),
+			Label: truncate(label, 100), Value: pl.UserID, Description: truncate(desc, 100), Emoji: emoji(icon),
 		})
 	}
 	return opts

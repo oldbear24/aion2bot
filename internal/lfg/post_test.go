@@ -2,6 +2,7 @@ package lfg
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -13,9 +14,9 @@ func newPost(missing int) Post {
 
 func TestJoinAcceptLeave(t *testing.T) {
 	p := newPost(2)
-	for _, id := range []string{"a", "b", "c"} {
-		if err := p.AddApplicant(Player{UserID: id}); err != nil {
-			t.Fatalf("join %s: %v", id, err)
+	for _, pl := range []Player{{UserID: "a", RoleID: "tank"}, {UserID: "b", RoleID: "healer"}, {UserID: "c", RoleID: "dps"}} {
+		if err := p.AddApplicant(pl); err != nil {
+			t.Fatalf("join %s: %v", pl.UserID, err)
 		}
 	}
 	if err := p.AddApplicant(Player{UserID: "a"}); !errors.Is(err, ErrAlreadyJoined) {
@@ -30,22 +31,81 @@ func TestJoinAcceptLeave(t *testing.T) {
 	if err != nil || len(got) != 2 {
 		t.Fatalf("accept: got %d players, err %v", len(got), err)
 	}
-	if p.Missing != 0 || p.Status != StatusFull || len(p.Applicants) != 1 {
-		t.Fatalf("after accept: missing %d status %s applicants %d", p.Missing, p.Status, len(p.Applicants))
+	if p.Missing != 0 || p.Status != StatusFull || len(p.Applicants) != 1 || p.FilledAt.IsZero() {
+		t.Fatalf("after accept: missing %d status %s applicants %d filled %v", p.Missing, p.Status, len(p.Applicants), p.FilledAt)
 	}
-	if err := p.AddApplicant(Player{UserID: "d"}); !errors.Is(err, ErrNotOpen) {
-		t.Fatalf("join full post: got %v", err)
+	// Joining a full party makes a reserve.
+	if err := p.AddApplicant(Player{UserID: "d", RoleID: "dps"}); err != nil || !p.IsReserve("d") {
+		t.Fatalf("join full post: err %v reserves %v", err, p.Reserves)
 	}
 
-	// An accepted player leaving reopens the post.
-	if _, wasAccepted, ok := p.Remove("a"); !ok || !wasAccepted {
-		t.Fatalf("remove accepted: ok %v wasAccepted %v", ok, wasAccepted)
+	// An accepted player leaving reopens the post when no reserve has
+	// their role.
+	if r, ok := p.Remove("a"); !ok || !r.WasAccepted || r.Promoted != nil {
+		t.Fatalf("remove accepted: ok %v removal %+v", ok, r)
 	}
-	if p.Missing != 1 || p.Status != StatusOpen {
-		t.Fatalf("after leave: missing %d status %s", p.Missing, p.Status)
+	if p.Missing != 1 || p.Status != StatusOpen || !p.IsReserve("d") {
+		t.Fatalf("after leave: missing %d status %s reserves %v", p.Missing, p.Status, p.Reserves)
 	}
-	if _, wasAccepted, ok := p.Remove("c"); !ok || wasAccepted || p.Missing != 1 {
-		t.Fatalf("remove applicant: ok %v wasAccepted %v missing %d", ok, wasAccepted, p.Missing)
+	if r, ok := p.Remove("c"); !ok || r.WasAccepted || p.Missing != 1 {
+		t.Fatalf("remove applicant: ok %v removal %+v missing %d", ok, r, p.Missing)
+	}
+
+	// The leader can still pick a reserve for the free slot.
+	if got, _ := p.Accept([]string{"d"}); len(got) != 1 || p.Status != StatusFull || len(p.Reserves) != 0 {
+		t.Fatalf("accept reserve: got %v status %s reserves %v", got, p.Status, p.Reserves)
+	}
+}
+
+func TestReserveTakesFreedSlot(t *testing.T) {
+	p := newPost(2)
+	p.AddApplicant(Player{UserID: "tank", RoleID: "tank"})
+	p.AddApplicant(Player{UserID: "healer", RoleID: "healer"})
+	p.Accept([]string{"tank", "healer"})
+	filled := p.FilledAt
+	for _, pl := range []Player{{UserID: "dps1", RoleID: "dps"}, {UserID: "healer2", RoleID: "healer"}, {UserID: "healer3", RoleID: "healer"}} {
+		if err := p.AddApplicant(pl); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The first reserve with the leaving player's role moves up; the post
+	// stays full.
+	r, ok := p.Remove("healer")
+	if !ok || r.Promoted == nil || r.Promoted.UserID != "healer2" {
+		t.Fatalf("promoted %+v", r.Promoted)
+	}
+	var reserves []string
+	for _, pl := range p.Reserves {
+		reserves = append(reserves, pl.UserID)
+	}
+	if p.Status != StatusFull || p.Missing != 0 || indexOf(p.Accepted, "healer2") < 0 || !slices.Equal(reserves, []string{"dps1", "healer3"}) {
+		t.Fatalf("after promotion: status %s missing %d accepted %v reserves %v", p.Status, p.Missing, p.Accepted, reserves)
+	}
+	if !p.FilledAt.Equal(filled) {
+		t.Fatal("filling again must not move the time the party first filled")
+	}
+
+	// Reserves count towards the players waiting.
+	for n := len(p.Reserves); n < MaxApplicants; n++ {
+		p.AddApplicant(Player{UserID: fmt.Sprint("r", n)})
+	}
+	if err := p.AddApplicant(Player{UserID: "late"}); !errors.Is(err, ErrTooManyJoined) {
+		t.Fatalf("join crowded post: got %v", err)
+	}
+}
+
+func TestStartChangeRemindsAgain(t *testing.T) {
+	now := time.Now()
+	p := newPost(1)
+	p.StartAt, p.Reminded = now.Add(10*time.Minute), true
+	p.SetDetails(0, p.StartAt, "note", time.Hour, now)
+	if !p.Reminded {
+		t.Fatal("the same start must not be reminded twice")
+	}
+	p.SetDetails(0, now.Add(time.Hour), "note", time.Hour, now)
+	if p.Reminded {
+		t.Fatal("a new start gets a reminder of its own")
 	}
 }
 
@@ -107,11 +167,13 @@ func TestPeople(t *testing.T) {
 	p.AddApplicant(Player{UserID: "a", GuildID: "g2"})
 	p.AddApplicant(Player{UserID: "b", GuildID: "g1"})
 	p.Accept([]string{"b"})
+	p.AdjustMissing(-1, 9)
+	p.AddApplicant(Player{UserID: "c", GuildID: "g2"})
 	var ids []string
 	for _, pl := range p.People() {
 		ids = append(ids, pl.UserID+"@"+pl.GuildID)
 	}
-	if want := []string{"leader@g1", "b@g1", "a@g2"}; !slices.Equal(ids, want) {
+	if want := []string{"leader@g1", "b@g1", "a@g2", "c@g2"}; !slices.Equal(ids, want) {
 		t.Fatalf("people %v, want %v", ids, want)
 	}
 }

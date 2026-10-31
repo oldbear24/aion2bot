@@ -2,6 +2,7 @@
   "post_ttl_hours": 3,
   "max_missing": 9,
   "max_runs_per_leader": 5,
+  "reminder_minutes": 15,
   "dungeons": [
     { "id": "abyssal-forge-ludra", "name": "Abyssal Forge: Ludra", "emoji": "🏛️", "party_size": 10, "description": "Sanctuary raid",
       "modes": [

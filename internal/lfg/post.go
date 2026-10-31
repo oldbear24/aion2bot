@@ -1,5 +1,5 @@
 // Package lfg holds the raid "looking for group" posts and the per-server
-// settings, and persists them to a JSON file.
+// settings, and persists them to SQLite.
 package lfg
 
 import (
@@ -49,6 +49,8 @@ type Player struct {
 	GS        int    `json:"gs,omitempty"`
 	GuildID   string `json:"guild_id,omitempty"`
 	GuildName string `json:"guild_name,omitempty"`
+	// Char is the player's in-game character name, for the invite.
+	Char string `json:"char,omitempty"`
 }
 
 // MessageRef is one copy of a post in one server's LFG channel.
@@ -81,6 +83,8 @@ type Post struct {
 	ID         string `json:"id"`
 	LeaderID   string `json:"leader_id"`
 	LeaderName string `json:"leader_name"`
+	// LeaderChar is the leader's in-game character name.
+	LeaderChar string `json:"leader_char,omitempty"`
 	GuildID    string `json:"guild_id"`
 	GuildName  string `json:"guild_name"`
 	DungeonID  string `json:"dungeon_id"`
@@ -102,13 +106,21 @@ type Post struct {
 	ClosedAt  time.Time `json:"closed_at"`
 	// Revision increases on every change so callers can tell whether a
 	// rendered copy is stale.
-	Revision   int          `json:"revision"`
-	Applicants []Player     `json:"applicants"`
-	Accepted   []Player     `json:"accepted"`
-	Messages   []MessageRef `json:"messages"`
+	Revision   int      `json:"revision"`
+	Applicants []Player `json:"applicants"`
+	Accepted   []Player `json:"accepted"`
+	// Reserves joined while the party was full. When a party member
+	// leaves, the first reserve with their role takes the slot.
+	Reserves []Player     `json:"reserves,omitempty"`
+	Messages []MessageRef `json:"messages"`
 	// Pinged lists users already notified about this post; later changes
 	// only edit the card silently.
 	Pinged []string `json:"pinged,omitempty"`
+	// FilledAt is when the party was first full, for the stats.
+	FilledAt time.Time `json:"filled_at"`
+	// Reminded is set once the reminder before the start is due, whether
+	// or not anyone was reminded.
+	Reminded bool `json:"reminded,omitempty"`
 }
 
 func (p *Post) Active() bool { return p.Status == StatusOpen || p.Status == StatusFull }
@@ -118,6 +130,7 @@ func (p *Post) Clone() Post {
 	c.LookingFor = slices.Clone(p.LookingFor)
 	c.Applicants = slices.Clone(p.Applicants)
 	c.Accepted = slices.Clone(p.Accepted)
+	c.Reserves = slices.Clone(p.Reserves)
 	c.Messages = slices.Clone(p.Messages)
 	c.Pinged = slices.Clone(p.Pinged)
 	return c
@@ -143,16 +156,32 @@ func (p *Post) MessageIn(guildID string) (MessageRef, bool) {
 	return MessageRef{}, false
 }
 
-// People is everyone on the post: the leader, the party and the players
-// waiting.
+// People is everyone on the post: the leader, the party, the players
+// waiting and the reserves.
 func (p *Post) People() []Player {
-	out := []Player{{UserID: p.LeaderID, Name: p.LeaderName, GuildID: p.GuildID, GuildName: p.GuildName}}
-	return append(append(out, p.Accepted...), p.Applicants...)
+	return slices.Concat([]Player{p.Leader()}, p.Accepted, p.Applicants, p.Reserves)
+}
+
+// Leader is the post's leader as a player.
+func (p *Post) Leader() Player {
+	return Player{UserID: p.LeaderID, Name: p.LeaderName, GuildID: p.GuildID, GuildName: p.GuildName, Char: p.LeaderChar}
 }
 
 func (p *Post) Has(userID string) bool {
-	return indexOf(p.Applicants, userID) >= 0 || indexOf(p.Accepted, userID) >= 0
+	return indexOf(p.Applicants, userID) >= 0 || indexOf(p.Accepted, userID) >= 0 || p.IsReserve(userID)
 }
+
+func (p *Post) IsReserve(userID string) bool { return indexOf(p.Reserves, userID) >= 0 }
+
+func (p *Post) InParty(userID string) bool { return indexOf(p.Accepted, userID) >= 0 }
+
+// Waiting is everyone the leader can still accept: the applicants, then
+// the reserves.
+func (p *Post) Waiting() []Player { return slices.Concat(p.Applicants, p.Reserves) }
+
+// Crowded reports whether too many players are waiting for anyone else to
+// join.
+func (p *Post) Crowded() bool { return len(p.Applicants)+len(p.Reserves) >= MaxApplicants }
 
 // GuildIDs lists the servers that have a copy of the post.
 func (p *Post) GuildIDs() []string {
@@ -167,25 +196,31 @@ func (p *Post) InGuild(guildID string) bool {
 	return slices.ContainsFunc(p.Messages, func(m MessageRef) bool { return m.GuildID == guildID })
 }
 
+// AddApplicant puts a player on the post: on the list for the leader while
+// the party has room, or among the reserves once it is full.
 func (p *Post) AddApplicant(pl Player) error {
 	switch {
-	case p.Status != StatusOpen:
+	case !p.Active():
 		return ErrNotOpen
 	case pl.UserID == p.LeaderID:
 		return ErrIsLeader
 	case p.Has(pl.UserID):
 		return ErrAlreadyJoined
-	case len(p.Applicants) >= MaxApplicants:
+	case p.Crowded():
 		return ErrTooManyJoined
 	case pl.GS < p.MinGS:
 		return ErrGearScore
 	}
-	p.Applicants = append(p.Applicants, pl)
+	if p.Status == StatusFull {
+		p.Reserves = append(p.Reserves, pl)
+	} else {
+		p.Applicants = append(p.Applicants, pl)
+	}
 	return nil
 }
 
-// Accept moves applicants into the party until no slots are left and
-// returns the players that were actually accepted.
+// Accept moves applicants or reserves into the party until no slots are
+// left and returns the players that were actually accepted.
 func (p *Post) Accept(userIDs []string) ([]Player, error) {
 	if !p.Active() {
 		return nil, ErrNotOpen
@@ -195,12 +230,10 @@ func (p *Post) Accept(userIDs []string) ([]Player, error) {
 		if p.Missing == 0 {
 			break
 		}
-		i := indexOf(p.Applicants, id)
-		if i < 0 {
+		pl, ok := p.takeWaiting(id)
+		if !ok {
 			continue
 		}
-		pl := p.Applicants[i]
-		p.Applicants = slices.Delete(p.Applicants, i, i+1)
 		p.Accepted = append(p.Accepted, pl)
 		p.Missing--
 		accepted = append(accepted, pl)
@@ -209,22 +242,48 @@ func (p *Post) Accept(userIDs []string) ([]Player, error) {
 	return accepted, nil
 }
 
-// Remove drops a player from the applicants or the party. Removing an
-// accepted player frees their slot again.
-func (p *Post) Remove(userID string) (pl Player, wasAccepted bool, ok bool) {
-	if i := indexOf(p.Applicants, userID); i >= 0 {
-		pl = p.Applicants[i]
-		p.Applicants = slices.Delete(p.Applicants, i, i+1)
-		return pl, false, true
+// Removal is a player taken off a post.
+type Removal struct {
+	Player      Player
+	WasAccepted bool
+	// Promoted is the reserve who took the freed slot in the party.
+	Promoted *Player
+}
+
+// Remove drops a player from the post. An accepted player's slot goes to
+// the first reserve with the same role; without one, it opens again.
+func (p *Post) Remove(userID string) (Removal, bool) {
+	if pl, ok := p.takeWaiting(userID); ok {
+		return Removal{Player: pl}, true
 	}
-	if i := indexOf(p.Accepted, userID); i >= 0 {
-		pl = p.Accepted[i]
-		p.Accepted = slices.Delete(p.Accepted, i, i+1)
+	i := indexOf(p.Accepted, userID)
+	if i < 0 {
+		return Removal{}, false
+	}
+	r := Removal{Player: p.Accepted[i], WasAccepted: true}
+	p.Accepted = slices.Delete(p.Accepted, i, i+1)
+	if j := slices.IndexFunc(p.Reserves, func(res Player) bool { return res.RoleID == r.Player.RoleID }); j >= 0 {
+		promoted := p.Reserves[j]
+		p.Reserves = slices.Delete(p.Reserves, j, j+1)
+		p.Accepted = append(p.Accepted, promoted)
+		r.Promoted = &promoted
+	} else {
 		p.Missing++
-		p.refreshStatus()
-		return pl, true, true
 	}
-	return Player{}, false, false
+	p.refreshStatus()
+	return r, true
+}
+
+// takeWaiting removes a player from the applicants or the reserves.
+func (p *Post) takeWaiting(userID string) (Player, bool) {
+	for _, list := range []*[]Player{&p.Applicants, &p.Reserves} {
+		if i := indexOf(*list, userID); i >= 0 {
+			pl := (*list)[i]
+			*list = slices.Delete(*list, i, i+1)
+			return pl, true
+		}
+	}
+	return Player{}, false
 }
 
 // AdjustMissing lets the leader account for players found outside the bot.
@@ -239,14 +298,15 @@ func (p *Post) AdjustMissing(delta, maxMissing int) error {
 
 // SetDetails changes the minimum gear score, start and note of an active
 // post. Players already on it stay, whatever their gear score. A new start
-// moves the expiry to ttl after it, or after now for a run without one.
+// moves the expiry to ttl after it, or after now for a run without one,
+// and gets a reminder of its own.
 func (p *Post) SetDetails(minGS int, startAt time.Time, note string, ttl time.Duration, now time.Time) error {
 	if !p.Active() {
 		return ErrNotOpen
 	}
 	p.MinGS, p.Note = minGS, note
 	if !startAt.Equal(p.StartAt) {
-		p.StartAt, p.Start = startAt, ""
+		p.StartAt, p.Start, p.Reminded = startAt, "", false
 		p.ExpiresAt = now.Add(ttl)
 		if startAt.After(now) {
 			p.ExpiresAt = startAt.Add(ttl)
@@ -270,6 +330,9 @@ func (p *Post) refreshStatus() {
 	}
 	if p.Missing == 0 {
 		p.Status = StatusFull
+		if p.FilledAt.IsZero() {
+			p.FilledAt = time.Now()
+		}
 	} else {
 		p.Status = StatusOpen
 	}

@@ -25,23 +25,34 @@ It uses Discord's new components:
      A run planned for later expires `post_ttl_hours` after its start, not after it was posted.
    - **Post** sends it to every linked server. New posts ping each server's ping role.
    A player can have up to `max_runs_per_leader` open runs at once.
-4. **Join.** Players click **Join**, pick their role and class (only combinations the post asks for) and enter their gear score.
-   `/profile` saves a main role, class and GS so the form is filled in; the GS also updates every time they join.
+4. **Find.** Players watch the LFG channel, or run `/lfg-find`: it lists the open runs on the linked servers that their class and gear score
+   from `/profile` fit, soonest start first, with a menu to join one. `/lfg-notify` sends them a DM with a link when a new post fits:
+   they pick the dungeons and what they play (one or more role and class pairs), and runs their profile GS is too low for are skipped.
+   Alerts count posts that reach the server they were set up on.
+5. **Join.** Players click **Join**, pick their role and class (only combinations the post asks for) and enter their gear score and in-game character name.
+   `/profile` saves a main role, class, character name and GS so the form is filled in; the GS and name also update every time they join.
    It also sets the player's time zone for typed start times. Until they pick one, it's guessed from their Discord language (Czech → Prague time).
-5. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players, change the gear score, start time and note (✏️),
+   The character name shows on the post and in Manage, so the leader knows whom to invite; accepted players see the leader's.
+   - **Reserves.** Once the party is full, **Join as reserve** puts players on a reserve list. When a party member leaves or is removed,
+     the first reserve with the same role takes the slot and is pinged; without one, the slot opens again and the leader can accept any reserve.
+6. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players and reserves, change the gear score, start time and note (✏️),
    adjust the missing count when someone joins outside the bot, **Close** the post, or **Delete** it from every server right away.
    A changed start moves the expiry with it, and the threads get a note of what changed.
-6. **Threads.** Each copy of a post gets a thread on its server, started when the first player joins, and the bot keeps them alike:
+7. **Threads.** Each copy of a post gets a thread on its server, started when the first player joins, and the bot keeps them alike:
    - Its notes go to every thread, in each server's language. Everyone is pinged **once** per run, on the server they posted or joined from:
-     the leader when the first player joins, each player when they're accepted. After that, changes only edit the card, which never notifies anyone.
+     the leader when the first player joins, each player when they're accepted (or move up from the reserves). After that, changes only edit the card, which never notifies anyone.
+   - The one exception is the **reminder** `reminder_minutes` before a planned start: the leader and the players accepted by then are pinged once more.
+     Players accepted later were told the start already, and anyone can turn reminders off in `/profile`.
    - What players write in one thread is relayed to the threads on the other servers, under the player's name and avatar (through a webhook in the LFG channel).
      Without *Manage Webhooks* the bot posts them itself, led by the player's name. Edits and deletes follow, so moderating one server's thread covers all of them.
    - The leader and everyone who joined are added to the thread on every linked server they're a member of.
    - The leader and the players are linked with @mentions on every server they're a member of; elsewhere they show by name, since Discord can't resolve the mention there.
 
    The channel itself only holds the posts. If a server has no copy of the post, or the bot can't use threads there, pings go by DM instead.
-7. **Cleanup.** Posts expire after `post_ttl_hours`. A closed or expired post is deleted from every server, with the thread under it, 24 hours after it ended.
+8. **Cleanup.** Posts expire after `post_ttl_hours`. A closed or expired post is deleted from every server, with the thread under it, 24 hours after it ended.
    The bot can delete threads it started; if Discord ever refuses, it deletes its pings and archives the thread instead.
+9. **Stats.** `/lfg-stats` shows the last 24 hours, 7 or 30 days of the server and its network: runs posted and open, how many filled and how fast,
+   the players on them, the most popular dungeons and the busiest servers. Ended runs are kept for this for 90 days.
 
 ## Languages
 
@@ -97,7 +108,10 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | Command | Who | What it does |
 |---|---|---|
 | `/lfg` | everyone | Opens the panel to post a run to all linked servers |
-| `/profile` | everyone | Saves your main role, class, gear score and time zone |
+| `/lfg-find [dungeon]` | everyone | Lists the open runs you can join with your class and gear score, with a menu to join one |
+| `/lfg-notify` | everyone | Sets up a DM for new runs: the dungeons you want and what you play |
+| `/lfg-stats [days]` | everyone | Shows runs posted and filled, the most popular dungeons and the busiest servers of the network |
+| `/profile` | everyone | Saves your main role, class, character name, gear score, time zone and whether you want reminders |
 | `/help` | everyone | Shows how to use the bot, only to you (members with Manage Server also see the admin commands) |
 | `/help-public` | Manage Messages | Posts the player guide (without the admin commands) in the channel for everyone (permission adjustable in Server Settings → Integrations) |
 | `/lfg-setup channel [ping_role] [language]` | Manage Server | Sets this server's LFG channel, ping role and post language, with a permission checklist |
@@ -117,6 +131,7 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
   "post_ttl_hours": 3,        // open posts expire after this many hours
   "max_missing": 9,           // highest "missing players" option (up to 25)
   "max_runs_per_leader": 5,   // open runs one player can have at once
+  "reminder_minutes": 15,     // how long before a planned start the party is reminded
   "dungeons": [               // 1–25 entries
     { "id": "krao-cave", "name": "Krao Cave", "emoji": "🗺️",
       "party_size": 5,                          // caps "missing players" at 4
@@ -158,6 +173,7 @@ A changed image is uploaded again on the next start and the old emoji deleted.
 ## Data
 
 Everything is stored in SQLite at `data/aion2bot.db` (change it with `DB_FILE`; `/data/aion2bot.db` in the Docker image). The driver is pure Go, so no C compiler is needed.
+Newer versions upgrade an older database on start. Posts, profiles and alerts are kept; ended runs stay in the stats for 90 days.
 On first start, a `data/store.json` from older versions is imported and renamed to `store.json.imported`; servers from it are linked into one network, because older versions shared posts with every server.
 
 ## Project layout
@@ -169,8 +185,8 @@ Dockerfile          the release image; compose.yaml runs it
 .github/workflows   CI (tests, image build) and releases
 internal/config     game.json and .env loading, role/class matching
 internal/emoji      role and class icons, uploaded as application emojis
-internal/lfg        post rules, SQLite storage, networks, profiles
-internal/bot        commands, panels, forms, cross-server sync, shared threads, cleanup
+internal/lfg        post rules and reserves, SQLite storage, networks, profiles, alerts, run history
+internal/bot        commands, panels, forms, cross-server sync, shared threads, reminders, alerts, search, stats, cleanup
 ```
 
 Run the tests with `go test ./...`.

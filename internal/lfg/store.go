@@ -34,6 +34,10 @@ type Profile struct {
 	// TimeZone is an IANA name such as "Europe/Prague"; empty means
 	// guess from the player's Discord language.
 	TimeZone string
+	// Char is the player's in-game character name.
+	Char string
+	// SkipReminders turns off the ping shortly before a run starts.
+	SkipReminders bool
 }
 
 const schema = `
@@ -121,11 +125,32 @@ CREATE TABLE IF NOT EXISTS profiles (
 	role_id    TEXT NOT NULL,
 	gs         INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
-);`
+);
+CREATE TABLE IF NOT EXISTS runs (
+	post_id    TEXT PRIMARY KEY,
+	guild_id   TEXT NOT NULL,
+	dungeon_id TEXT NOT NULL,
+	mode_id    TEXT NOT NULL,
+	status     TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	filled_at  INTEGER NOT NULL,
+	players    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS runs_by_created ON runs (created_at);
+CREATE TABLE IF NOT EXISTS alerts (
+	user_id    TEXT PRIMARY KEY,
+	guild_id   TEXT NOT NULL,
+	lang       TEXT NOT NULL,
+	dungeons   TEXT NOT NULL,
+	choices    TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS alerts_by_guild ON alerts (guild_id);`
 
 var postColumns = []string{
 	"id", "leader_id", "leader_name", "guild_id", "guild_name", "dungeon_id", "mode_id", "min_gs", "looking_for",
 	"missing", "start", "note", "status", "created_at", "expires_at", "closed_at", "revision", "pinged", "start_at",
+	"leader_char", "filled_at", "reminded",
 }
 
 var (
@@ -174,6 +199,13 @@ var migrations = []string{
 	`ALTER TABLE posts ADD COLUMN start_at INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE profiles ADD COLUMN timezone TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE messages ADD COLUMN thread INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE posts ADD COLUMN leader_char TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE posts ADD COLUMN filled_at INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE posts ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE players ADD COLUMN char_name TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE players ADD COLUMN reserve INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE profiles ADD COLUMN char_name TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE profiles ADD COLUMN skip_reminders INTEGER NOT NULL DEFAULT 0`,
 }
 
 func migrate(db *sql.DB) error {
@@ -318,7 +350,8 @@ func (s *Store) CreatePost(p Post, maxActive int) (Post, error) {
 // UpdatePost runs fn on the stored post inside a transaction and only
 // commits if fn succeeds, so a failed check never leaves a half-applied
 // change. The returned post is the stored one, changed or not. Changes fn
-// makes to Messages are not saved; use AddMessages and RemoveMessage.
+// makes to Messages are not saved; use AddMessages and RemoveMessage. A
+// post that ends is kept for the stats.
 func (s *Store) UpdatePost(id string, fn func(p *Post) error) (Post, error) {
 	var result Post
 	err := s.inTx(func(tx *sql.Tx) error {
@@ -334,6 +367,11 @@ func (s *Store) UpdatePost(id string, fn func(p *Post) error) (Post, error) {
 		next.Revision++
 		if err := writePost(tx, &next); err != nil {
 			return err
+		}
+		if cur.Active() && !next.Active() {
+			if err := recordRun(tx, &next); err != nil {
+				return err
+			}
 		}
 		result = next
 		return nil
@@ -381,10 +419,45 @@ func (s *Store) ExpireDue(now time.Time) []string {
 		}
 		_, err = tx.Exec(`UPDATE posts SET status = ?, closed_at = ?, revision = revision + 1
 			WHERE status IN `+activeStatuses+` AND expires_at < ?`, StatusExpired, millis(now), millis(now))
-		return err
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			p, err := loadPost(tx, id)
+			if err != nil {
+				return err
+			}
+			if err := recordRun(tx, p); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		log.Printf("store: expire posts: %v", err)
+		return nil
+	}
+	return ids
+}
+
+// DueReminders returns the active posts starting within the window that
+// weren't due before, and marks them so each is reminded once. Players
+// accepted after this were pinged with the start already.
+func (s *Store) DueReminders(window time.Duration, now time.Time) []string {
+	var ids []string
+	err := s.inTx(func(tx *sql.Tx) error {
+		var err error
+		const due = ` WHERE status IN ` + activeStatuses + ` AND reminded = 0 AND start_at > ? AND start_at <= ?`
+		args := []any{millis(now), millis(now.Add(window))}
+		ids, err = queryIDs(tx, `SELECT id FROM posts`+due+` ORDER BY start_at, id`, args...)
+		if err != nil || len(ids) == 0 {
+			return err
+		}
+		_, err = tx.Exec(`UPDATE posts SET reminded = 1`+due, args...)
+		return err
+	})
+	if err != nil {
+		log.Printf("store: find due reminders: %v", err)
 		return nil
 	}
 	return ids
@@ -542,8 +615,8 @@ func (s *Store) DeletePost(id string) {
 
 func (s *Store) Profile(userID string) (Profile, bool) {
 	p := Profile{UserID: userID}
-	err := s.db.QueryRow(`SELECT class_id, role_id, gs, timezone FROM profiles WHERE user_id = ?`, userID).
-		Scan(&p.ClassID, &p.RoleID, &p.GS, &p.TimeZone)
+	err := s.db.QueryRow(`SELECT class_id, role_id, gs, timezone, char_name, skip_reminders FROM profiles WHERE user_id = ?`, userID).
+		Scan(&p.ClassID, &p.RoleID, &p.GS, &p.TimeZone, &p.Char, &p.SkipReminders)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			log.Printf("store: load profile %s: %v", userID, err)
@@ -554,10 +627,12 @@ func (s *Store) Profile(userID string) (Profile, bool) {
 }
 
 func (s *Store) SetProfile(p Profile) error {
-	_, err := s.db.Exec(`INSERT INTO profiles (user_id, class_id, role_id, gs, timezone, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO profiles (user_id, class_id, role_id, gs, timezone, char_name, skip_reminders, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET class_id = excluded.class_id, role_id = excluded.role_id,
-			gs = excluded.gs, timezone = excluded.timezone, updated_at = excluded.updated_at`,
-		p.UserID, p.ClassID, p.RoleID, p.GS, p.TimeZone, millis(time.Now()))
+			gs = excluded.gs, timezone = excluded.timezone, char_name = excluded.char_name,
+			skip_reminders = excluded.skip_reminders, updated_at = excluded.updated_at`,
+		p.UserID, p.ClassID, p.RoleID, p.GS, p.TimeZone, p.Char, p.SkipReminders, millis(time.Now()))
 	return err
 }
 
@@ -655,10 +730,11 @@ type querier interface {
 func loadPost(q querier, id string) (*Post, error) {
 	var p Post
 	var lookingFor, pinged string
-	var created, expires, closed, startAt int64
+	var created, expires, closed, startAt, filled int64
 	err := q.QueryRow(selectPost+" WHERE id = ?", id).Scan(
 		&p.ID, &p.LeaderID, &p.LeaderName, &p.GuildID, &p.GuildName, &p.DungeonID, &p.ModeID, &p.MinGS, &lookingFor,
-		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt)
+		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt,
+		&p.LeaderChar, &filled, &p.Reminded)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -672,23 +748,27 @@ func loadPost(q querier, id string) (*Post, error) {
 		return nil, fmt.Errorf("post %s pinged: %w", id, err)
 	}
 	p.CreatedAt, p.ExpiresAt, p.ClosedAt = fromMillis(created), fromMillis(expires), fromMillis(closed)
-	p.StartAt = fromMillis(startAt)
+	p.StartAt, p.FilledAt = fromMillis(startAt), fromMillis(filled)
 
-	rows, err := q.Query(`SELECT user_id, name, class_id, role_id, gs, guild_id, guild_name, accepted FROM players
-		WHERE post_id = ? ORDER BY position`, id)
+	rows, err := q.Query(`SELECT user_id, name, class_id, role_id, gs, guild_id, guild_name, char_name, accepted, reserve
+		FROM players WHERE post_id = ? ORDER BY position`, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var pl Player
-		var accepted bool
-		if err := rows.Scan(&pl.UserID, &pl.Name, &pl.ClassID, &pl.RoleID, &pl.GS, &pl.GuildID, &pl.GuildName, &accepted); err != nil {
+		var accepted, reserve bool
+		if err := rows.Scan(&pl.UserID, &pl.Name, &pl.ClassID, &pl.RoleID, &pl.GS, &pl.GuildID, &pl.GuildName, &pl.Char,
+			&accepted, &reserve); err != nil {
 			return nil, err
 		}
-		if accepted {
+		switch {
+		case accepted:
 			p.Accepted = append(p.Accepted, pl)
-		} else {
+		case reserve:
+			p.Reserves = append(p.Reserves, pl)
+		default:
 			p.Applicants = append(p.Applicants, pl)
 		}
 	}
@@ -726,7 +806,7 @@ func writePost(tx *sql.Tx, p *Post) error {
 	_, err = tx.Exec(upsertPost,
 		p.ID, p.LeaderID, p.LeaderName, p.GuildID, p.GuildName, p.DungeonID, p.ModeID, p.MinGS, string(lookingFor),
 		p.Missing, p.Start, p.Note, p.Status, millis(p.CreatedAt), millis(p.ExpiresAt), millis(p.ClosedAt), p.Revision,
-		string(pinged), millis(p.StartAt))
+		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded)
 	if err != nil {
 		return err
 	}
@@ -735,14 +815,15 @@ func writePost(tx *sql.Tx, p *Post) error {
 	}
 	position := 0
 	for _, group := range []struct {
-		players  []Player
-		accepted bool
-	}{{p.Accepted, true}, {p.Applicants, false}} {
+		players           []Player
+		accepted, reserve bool
+	}{{p.Accepted, true, false}, {p.Applicants, false, false}, {p.Reserves, false, true}} {
 		for _, pl := range group.players {
 			position++
-			_, err := tx.Exec(`INSERT INTO players (post_id, user_id, name, class_id, role_id, gs, guild_id, guild_name, accepted, position)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				p.ID, pl.UserID, pl.Name, pl.ClassID, pl.RoleID, pl.GS, pl.GuildID, pl.GuildName, group.accepted, position)
+			_, err := tx.Exec(`INSERT INTO players (post_id, user_id, name, class_id, role_id, gs, guild_id, guild_name, char_name,
+				accepted, reserve, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				p.ID, pl.UserID, pl.Name, pl.ClassID, pl.RoleID, pl.GS, pl.GuildID, pl.GuildName, pl.Char,
+				group.accepted, group.reserve, position)
 			if err != nil {
 				return err
 			}

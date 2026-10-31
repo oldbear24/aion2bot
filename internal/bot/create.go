@@ -221,9 +221,11 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 	if d.StartAt.After(now) {
 		expires = d.StartAt.Add(b.game.PostTTL())
 	}
+	prof, _ := b.store.Profile(userID)
 	p, err := b.store.CreatePost(lfg.Post{
 		LeaderID:   userID,
 		LeaderName: name,
+		LeaderChar: prof.Char,
 		GuildID:    i.GuildID,
 		GuildName:  b.guildName(i.GuildID),
 		DungeonID:  d.DungeonID,
@@ -261,7 +263,9 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 	if failed > 0 {
 		msg += l.T("draft.unreachable", l.N(failed, "n.server"))
 	}
-	return b.editReply(i, container(colorOpen, text(msg), manageRow(p.ID, l)))
+	err = b.editReply(i, container(colorOpen, text(msg), manageRow(p.ID, l)))
+	b.sendAlerts(p.ID)
+	return err
 }
 
 // parseGS accepts "3000", "3,000", "3 000", "3.2k" and the Czech "3,2k".

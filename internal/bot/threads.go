@@ -49,15 +49,15 @@ func (b *Bot) thread(p lfg.Post, ref lfg.MessageRef) (threadID string, started b
 // announce posts a note in the thread under every copy of a post, written
 // by note in each server's language. With start set, missing threads are
 // started and everyone on the post is added to them; otherwise only the
-// existing threads get the note. ping is notified on the home server only,
-// so nobody is pinged twice; elsewhere their mention is just a link. It
-// reports whether the note reached the home server, so the caller can
-// fall back to a DM. Callers run learnMembers first, as note and the
-// thread members depend on it.
-func (b *Bot) announce(p lfg.Post, home string, ping []string, start bool, note func(guildID string, l i18n.Lang) string) bool {
+// existing threads get the note. pings maps a server to the users notified
+// there: each user's home server only, so nobody is pinged twice;
+// elsewhere their mention is just a link. It returns the servers the note
+// reached, so the caller can fall back to a DM. Callers run learnMembers
+// first, as note and the thread members depend on it.
+func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note func(guildID string, l i18n.Lang) string) map[string]bool {
 	langs := b.guildLangs()
 	var mu sync.Mutex
-	reached := false
+	reached := map[string]bool{}
 	var started []lfg.MessageRef
 	forEach(p.Messages, func(ref lfg.MessageRef) {
 		if !ref.Thread && !start {
@@ -67,8 +67,8 @@ func (b *Bot) announce(p lfg.Post, home string, ping []string, start bool, note 
 		var id string
 		if err == nil {
 			mentions := noMentions
-			if ref.GuildID == home {
-				mentions = &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}, Users: ping}
+			if users := pings[ref.GuildID]; len(users) > 0 {
+				mentions = &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}, Users: users}
 			}
 			id, err = b.send(threadID, []discordgo.MessageComponent{text(note(ref.GuildID, langs.of(ref.GuildID)))}, mentions)
 		}
@@ -79,7 +79,7 @@ func (b *Bot) announce(p lfg.Post, home string, ping []string, start bool, note 
 		b.store.AddReply(p.ID, lfg.MessageRef{GuildID: ref.GuildID, ChannelID: threadID, MessageID: id})
 		mu.Lock()
 		defer mu.Unlock()
-		reached = reached || ref.GuildID == home
+		reached[ref.GuildID] = true
 		if fresh {
 			ref.Thread = true
 			started = append(started, ref)
