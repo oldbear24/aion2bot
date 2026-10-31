@@ -209,7 +209,8 @@ func TestOtherPanelsFitDiscordLimits(t *testing.T) {
 		for name, panel := range map[string]discordgo.MessageComponent{
 			"confirm delete": b.confirmDelete(p, l),
 			"too many runs":  b.tooManyRuns(open, l),
-			"help":           b.helpPanel(l),
+			"help":           b.helpPanel(l, false),
+			"admin help":     b.helpPanel(l, true),
 		} {
 			if count, textLen := measure(t, panel); count > maxComponents || textLen > maxTextLength {
 				t.Errorf("%s %s: %d components, %d characters", l, name, count, textLen)
@@ -587,13 +588,48 @@ func TestDungeonPartySizeLimitsMissing(t *testing.T) {
 func TestHelpFitsDiscordLimits(t *testing.T) {
 	b := testBot(t)
 	b.commandIDs = map[string]string{"lfg": "111", "lfg-network": "222"}
-	panel := b.helpPanel(i18n.English)
+	panel := b.helpPanel(i18n.English, true)
 	count, textLen := measure(t, panel)
 	if count > maxComponents || textLen > maxTextLength {
 		t.Errorf("help: %d components, %d characters", count, textLen)
 	}
 	if b.cmd("lfg") != "</lfg:111>" || b.cmd("lfg-network join") != "</lfg-network join:222>" || b.cmd("profile") != "`/profile`" {
 		t.Errorf("command mentions: %s %s %s", b.cmd("lfg"), b.cmd("lfg-network join"), b.cmd("profile"))
+	}
+}
+
+func TestOnlyAdminsSeeAdminCommands(t *testing.T) {
+	b := testBot(t)
+	for _, l := range i18n.Langs {
+		admin, _ := json.Marshal(b.helpPanel(l, true))
+		player, _ := json.Marshal(b.helpPanel(l, false))
+		for _, cmd := range []string{"/lfg-setup", "/lfg-check", "/lfg-network", "/lfg-disable", "/help-public"} {
+			if !strings.Contains(string(admin), cmd) {
+				t.Errorf("%s admin help lacks %s", l, cmd)
+			}
+			if strings.Contains(string(player), cmd) {
+				t.Errorf("%s player help shows %s", l, cmd)
+			}
+		}
+	}
+
+	member := func(perms int64) *discordgo.Interaction {
+		return &discordgo.Interaction{Member: &discordgo.Member{Permissions: perms}}
+	}
+	for _, c := range []struct {
+		name string
+		i    *discordgo.Interaction
+		want bool
+	}{
+		{"DM", &discordgo.Interaction{User: &discordgo.User{ID: "u"}}, false},
+		{"player", member(discordgo.PermissionSendMessages), false},
+		{"moderator", member(discordgo.PermissionManageMessages), false},
+		{"manage server", member(discordgo.PermissionManageGuild), true},
+		{"administrator", member(discordgo.PermissionAdministrator), true},
+	} {
+		if got := managesServer(c.i); got != c.want {
+			t.Errorf("%s: managesServer %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

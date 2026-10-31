@@ -89,8 +89,8 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 |---|---|---|
 | `/lfg` | everyone | Opens the panel to post a run to all linked servers |
 | `/profile` | everyone | Saves your main role, class, gear score and time zone |
-| `/help` | everyone | Shows how to use the bot, only to you |
-| `/help-public` | Manage Messages | Posts the guide in the channel for everyone (permission adjustable in Server Settings → Integrations) |
+| `/help` | everyone | Shows how to use the bot, only to you (members with Manage Server also see the admin commands) |
+| `/help-public` | Manage Messages | Posts the player guide (without the admin commands) in the channel for everyone (permission adjustable in Server Settings → Integrations) |
 | `/lfg-setup channel [ping_role] [language]` | Manage Server | Sets this server's LFG channel, ping role and post language, with a permission checklist |
 | `/lfg-check [channel]` | Manage Server | Checks the bot's permissions, the ping role and the network |
 | `/lfg-network create name` | Manage Server | Starts a network and shows its join code |
