@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/gorilla/websocket"
 
 	"aion2bot/internal/config"
+	appemoji "aion2bot/internal/emoji"
 	"aion2bot/internal/lfg"
 )
 
@@ -41,6 +43,13 @@ type Bot struct {
 	// members tells where the people on posts can be linked with mentions.
 	members memberCache
 
+	// relayMu keeps each thread's relayed messages in order (see relayLock).
+	relayMu [16]sync.Mutex
+	// hookMu guards setting up webhooks; hookFailed remembers when it last
+	// failed in a channel.
+	hookMu     sync.Mutex
+	hookFailed map[string]time.Time
+
 	// commandIDs lets messages show clickable command mentions.
 	cmdMu      sync.RWMutex
 	commandIDs map[string]string
@@ -54,15 +63,17 @@ func New(token string, game *config.Game, store *lfg.Store, devGuild string) (*B
 	if err != nil {
 		return nil, err
 	}
-	s.Identify.Intents = discordgo.IntentsGuilds
+	// Thread messages are relayed between servers, which needs their text.
+	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent
 
 	b := &Bot{
-		s:        s,
-		game:     game,
-		store:    store,
-		devGuild: devGuild,
-		syncs:    map[string]*syncState{},
-		drafts:   map[string]*draft{},
+		s:          s,
+		game:       game,
+		store:      store,
+		devGuild:   devGuild,
+		syncs:      map[string]*syncState{},
+		drafts:     map[string]*draft{},
+		hookFailed: map[string]time.Time{},
 
 		commandIDs: map[string]string{},
 		stop:       make(chan struct{}),
@@ -70,11 +81,36 @@ func New(token string, game *config.Game, store *lfg.Store, devGuild string) (*B
 	}
 	s.AddHandler(b.onInteraction)
 	s.AddHandler(b.onGuildDelete)
+	s.AddHandler(b.onMessageCreate)
+	s.AddHandler(b.onMessageUpdate)
+	s.AddHandler(b.onMessageDelete)
+	s.AddHandler(b.onMessageDeleteBulk)
 	return b, nil
 }
 
+// closeDisallowedIntents is the gateway's answer to a privileged intent
+// that isn't enabled in the Developer Portal.
+const closeDisallowedIntents = 4014
+
 func (b *Bot) Start() error {
-	if err := b.s.Open(); err != nil {
+	// The icons are set before connecting, so no interaction reads the game
+	// data while it changes.
+	if me, err := b.s.User("@me"); err != nil {
+		return fmt.Errorf("connect to Discord: %w", err)
+	} else if icons, err := appemoji.Sync(b.s, me.ID); err != nil {
+		log.Printf("upload role and class icons, using the emojis from the game file: %v", err)
+	} else {
+		b.game.UseIcons(icons)
+	}
+
+	err := b.s.Open()
+	if websocket.IsCloseError(err, closeDisallowedIntents) {
+		log.Print("The Message Content intent is off for this bot, so messages in threads aren't relayed between servers. " +
+			"Turn on Message Content Intent under Bot in the Discord Developer Portal and restart.")
+		b.s.Identify.Intents = discordgo.IntentsGuilds
+		err = b.s.Open()
+	}
+	if err != nil {
 		return fmt.Errorf("connect to Discord: %w", err)
 	}
 	if err := b.registerCommands(); err != nil {
@@ -110,12 +146,16 @@ func (b *Bot) registerCommands() error {
 	return nil
 }
 
+// guard logs a panic in an event handler instead of crashing the bot. It
+// must be deferred directly.
+func guard(what string) {
+	if r := recover(); r != nil {
+		log.Printf("panic %s: %v\n%s", what, r, debug.Stack())
+	}
+}
+
 func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreate) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("panic handling interaction: %v\n%s", r, debug.Stack())
-		}
-	}()
+	defer guard("handling interaction")
 	i := ic.Interaction
 	// Whoever uses the bot on a server is a member of it.
 	if i.GuildID != "" && i.Member != nil && i.Member.User != nil {
@@ -155,6 +195,8 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 			err = b.onProfileSubmit(i)
 		} else if action, postID, ok := parseCustomID(id); ok && action == actJoinForm {
 			err = b.onJoinSubmit(i, postID)
+		} else if ok && action == actEditForm {
+			err = b.onEditSubmit(i, postID)
 		}
 	case discordgo.InteractionMessageComponent:
 		data := i.MessageComponentData()

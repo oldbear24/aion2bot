@@ -28,13 +28,18 @@ It uses Discord's new components:
 4. **Join.** Players click **Join**, pick their role and class (only combinations the post asks for) and enter their gear score.
    `/profile` saves a main role, class and GS so the form is filled in; the GS also updates every time they join.
    It also sets the player's time zone for typed start times. Until they pick one, it's guessed from their Discord language (Czech → Prague time).
-5. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players, adjust the missing count when someone joins
-   outside the bot, **Close** the post, or **Delete** it from every server right away.
-6. **Pings.** The leader and the players are linked with @mentions on every linked server they're a member of, so they're easy to find and message.
-   Where they aren't a member, they show by name, since Discord can't resolve the mention there.
-   Everyone is pinged **once** per run, in a thread the bot starts under the post: the leader when the first player joins, each player when they're accepted.
-   The channel itself only holds the posts. A server's thread is started with its first ping, so posts nobody joins don't get one.
-   After that, changes only edit the card, which never notifies anyone. If a server has no copy of the post, or the bot can't use threads there, a DM is sent instead.
+5. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players, change the gear score, start time and note (✏️),
+   adjust the missing count when someone joins outside the bot, **Close** the post, or **Delete** it from every server right away.
+   A changed start moves the expiry with it, and the threads get a note of what changed.
+6. **Threads.** Each copy of a post gets a thread on its server, started when the first player joins, and the bot keeps them alike:
+   - Its notes go to every thread, in each server's language. Everyone is pinged **once** per run, on the server they posted or joined from:
+     the leader when the first player joins, each player when they're accepted. After that, changes only edit the card, which never notifies anyone.
+   - What players write in one thread is relayed to the threads on the other servers, under the player's name and avatar (through a webhook in the LFG channel).
+     Without *Manage Webhooks* the bot posts them itself, led by the player's name. Edits and deletes follow, so moderating one server's thread covers all of them.
+   - The leader and everyone who joined are added to the thread on every linked server they're a member of.
+   - The leader and the players are linked with @mentions on every server they're a member of; elsewhere they show by name, since Discord can't resolve the mention there.
+
+   The channel itself only holds the posts. If a server has no copy of the post, or the bot can't use threads there, pings go by DM instead.
 7. **Cleanup.** Posts expire after `post_ttl_hours`. A closed or expired post is deleted from every server, with the thread under it, 24 hours after it ended.
    The bot can delete threads it started; if Discord ever refuses, it deletes its pings and archives the thread instead.
 
@@ -51,17 +56,21 @@ All texts live in `internal/i18n` (`en.go`, `cs.go`); a test checks both catalog
 
 ## Setup
 
-1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application, open **Bot** and copy the token. No privileged intents are needed.
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application, open **Bot** and copy the token.
+   On the same page, turn on **Message Content Intent**, so the bot can relay what players write in the threads under posts.
+   Without it the bot still runs (it says so in the log), but threads aren't relayed. Bots in fewer than 100 servers can turn it on freely.
 2. Invite the bot to each server (replace `APP_ID`):
 
    ```
-   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=309237648384
+   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=309774519296
    ```
 
-   `309237648384` is all the bot needs: View Channel and Send Messages to post, Create Public Threads and Send Messages in Threads to ping in a thread under each post.
-   Use `309237779456` to also add *Mention @everyone, @here and All Roles*, which lets the bot ping a ping role that isn't set as mentionable.
+   `309774519296` is all the bot needs: View Channel and Send Messages to post, Create Public Threads and Send Messages in Threads for the thread under each post,
+   and Manage Webhooks to show relayed messages under each player's name and avatar.
+   Use `309774650368` to also add *Mention @everyone, @here and All Roles*, which lets the bot ping a ping role that isn't set as mentionable.
    Nothing else is needed: the bot only edits and deletes its own messages and threads, and buttons, forms and commands work through interactions.
    Most servers give the thread permissions to @everyone, so older invites keep working; `/lfg-check` shows if one is missing.
+   Servers invited before relaying existed can give the bot's role *Manage Webhooks* in the LFG channel; until then, relayed messages come from the bot itself.
 3. Run the released Docker image on a server: see **[DEPLOY.md](DEPLOY.md)**. In short:
 
    ```sh
@@ -138,6 +147,10 @@ Content only in the client files (Chalice of Muspel, Corroded Decontamination Fa
 Class roles: Templar tanks, Gladiator tanks or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.
 Emojis can be Unicode or custom (`"<:krao:123456789012345678>"`). Keep `id`s stable: open posts refer to them.
 
+Roles and classes show as icons: `internal/emoji/images/<id>.png` (128×128) is built into the bot, uploaded as an application emoji at startup
+and used instead of the `emoji` in `game.json`, which stays as the fallback (for an id without an icon, or if the upload fails).
+A changed image is uploaded again on the next start and the old emoji deleted.
+
 ## Data
 
 Everything is stored in SQLite at `data/aion2bot.db` (change it with `DB_FILE`; `/data/aion2bot.db` in the Docker image). The driver is pure Go, so no C compiler is needed.
@@ -151,8 +164,9 @@ game.json           dungeons, modes, roles and classes
 Dockerfile          the release image; compose.yaml runs it
 .github/workflows   CI (tests, image build) and releases
 internal/config     game.json and .env loading, role/class matching
+internal/emoji      role and class icons, uploaded as application emojis
 internal/lfg        post rules, SQLite storage, networks, profiles
-internal/bot        commands, panels, forms, cross-server sync, pings, cleanup
+internal/bot        commands, panels, forms, cross-server sync, shared threads, cleanup
 ```
 
 Run the tests with `go test ./...`.

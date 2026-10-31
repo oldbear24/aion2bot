@@ -232,6 +232,21 @@ func (g *Game) Class(id string) (Class, bool) {
 	return Class{}, false
 }
 
+// UseIcons replaces the emoji of each role and class that has an icon,
+// keyed by its id. The emoji from game.json stays for the others.
+func (g *Game) UseIcons(icons map[string]string) {
+	for i, r := range g.Roles {
+		if e, ok := icons[r.ID]; ok {
+			g.Roles[i].Emoji = e
+		}
+	}
+	for i, c := range g.Classes {
+		if e, ok := icons[c.ID]; ok {
+			g.Classes[i].Emoji = e
+		}
+	}
+}
+
 func (g *Game) ClassOrUnknown(id string) Class {
 	if c, ok := g.Class(id); ok {
 		return c

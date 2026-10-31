@@ -60,21 +60,10 @@ func (b *Bot) syncPost(postID string) {
 	if !ok {
 		return
 	}
-	langs := map[string]i18n.Lang{}
-	for _, g := range b.store.Guilds() {
-		langs[g.GuildID] = i18n.Parse(g.Lang)
-	}
-	var guildIDs []string
-	for _, ref := range p.Messages {
-		guildIDs = append(guildIDs, ref.GuildID)
-	}
-	b.learnMembers(p, guildIDs)
+	langs := b.guildLangs()
+	b.learnMembers(p, p.GuildIDs())
 	forEach(p.Messages, func(ref lfg.MessageRef) {
-		l, ok := langs[ref.GuildID]
-		if !ok {
-			l = i18n.English
-		}
-		err := b.edit(ref.ChannelID, ref.MessageID, b.postCard(p, ref.GuildID, ref.PingRoleID, l))
+		err := b.edit(ref.ChannelID, ref.MessageID, b.postCard(p, ref.GuildID, ref.PingRoleID, langs.of(ref.GuildID)))
 		switch {
 		case isGone(err):
 			b.store.RemoveMessage(postID, ref.MessageID)
@@ -151,35 +140,22 @@ func forEach[T any](items []T, fn func(T)) {
 	wg.Wait()
 }
 
-// announce pings the given users in the thread under a post's copy on one
-// server, keeping the channel itself to the posts. The thread is started
-// on the first ping. Each user is pinged at most once per post (see
-// Post.MarkPinged); everything after that only edits the card, which
-// notifies nobody. It reports false when the server has no copy or the
-// message failed, so the caller can fall back to a DM.
-func (b *Bot) announce(p lfg.Post, guildID string, ping []string, msg string) bool {
-	ref, ok := p.MessageIn(guildID)
-	if !ok {
-		return false
+// langMap holds the language each server chose for its posts.
+type langMap map[string]i18n.Lang
+
+func (m langMap) of(guildID string) i18n.Lang {
+	if l, ok := m[guildID]; ok {
+		return l
 	}
-	threadID := ref.MessageID
-	var err error
-	if !ref.Thread {
-		if threadID, err = b.startThread(ref.ChannelID, ref.MessageID, b.threadName(p)); err == nil {
-			b.store.SetThread(p.ID, ref.MessageID)
-		}
+	return i18n.English
+}
+
+func (b *Bot) guildLangs() langMap {
+	langs := langMap{}
+	for _, g := range b.store.Guilds() {
+		langs[g.GuildID] = i18n.Parse(g.Lang)
 	}
-	var id string
-	if err == nil {
-		id, err = b.send(threadID, []discordgo.MessageComponent{text(msg)},
-			&discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}, Users: ping})
-	}
-	if err != nil {
-		log.Printf("announce on post %s in guild %s: %v", p.ID, guildID, err)
-		return false
-	}
-	b.store.AddReply(p.ID, lfg.MessageRef{GuildID: ref.GuildID, ChannelID: threadID, MessageID: id})
-	return true
+	return langs
 }
 
 // deleteEnded removes posts that ended before the cutoff: every copy of the

@@ -38,6 +38,8 @@ const (
 	actDelete    = "delete"
 	actDeleteYes = "deleteyes"
 	actPanel     = "panel"
+	actEdit      = "edit"
+	actEditForm  = "editform"
 )
 
 // The /lfg panel uses "lfgd:<field>". It is ephemeral, so the draft is
@@ -243,15 +245,7 @@ func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
 		divider(),
 	)
 
-	gs := l.T("draft.gs_none")
-	if d.MinGS > 0 {
-		gs = l.GS(d.MinGS) + "+"
-	}
-	if game := b.gameMinGS(d); game > 0 {
-		gs += l.T("draft.gs_game", l.GS(game))
-	}
-	comps = append(comps, text(l.T("draft.summary", gs,
-		startText(d.StartAt, "", l), orDefault(escape(truncate(d.Note, 120)), l.T("draft.no_note")))))
+	comps = append(comps, text(detailsSummary(d.MinGS, b.gameMinGS(d), d.StartAt, "", d.Note, l)))
 	if d.Problem != "" {
 		comps = append(comps, text("⚠️ "+l.T(d.Problem)))
 	}
@@ -267,17 +261,30 @@ func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
 }
 
 func (b *Bot) detailsModal(d draft, l i18n.Lang) modal {
+	return detailsForm(draftID(fieldDetails), b.gameMinGS(d), d.MinGS, d.StartInput, d.zone(), d.Note, l)
+}
+
+// editModal is the same form for a post that is already up, filled in
+// with its current details.
+func (b *Bot) editModal(p lfg.Post, zone *time.Location, l i18n.Lang) modal {
+	m, _ := b.game.DungeonOrUnknown(p.DungeonID).Mode(p.ModeID)
+	return detailsForm(customID(actEditForm, p.ID), m.GS, p.MinGS, startInput(p.StartAt, zone), zone, p.Note, l)
+}
+
+// detailsForm asks for the minimum gear score, the start and a note.
+// gameGS is what the game asks for the difficulty, shown as a hint.
+func detailsForm(id string, gameGS, minGS int, start string, zone *time.Location, note string, l i18n.Lang) modal {
 	optional := false
 	gsHelp := l.T("details.gs_help")
-	if game := b.gameMinGS(d); game > 0 {
-		gsHelp = l.T("details.gs_game", l.GS(game))
+	if gameGS > 0 {
+		gsHelp = l.T("details.gs_game", l.GS(gameGS))
 	}
 	gs := ""
-	if d.MinGS > 0 {
-		gs = strconv.Itoa(d.MinGS)
+	if minGS > 0 {
+		gs = strconv.Itoa(minGS)
 	}
 	return modal{
-		CustomID: draftID(fieldDetails),
+		CustomID: id,
 		Title:    l.T("details.title"),
 		Components: []discordgo.MessageComponent{
 			discordgo.Label{
@@ -288,17 +295,38 @@ func (b *Bot) detailsModal(d draft, l i18n.Lang) modal {
 			},
 			discordgo.Label{
 				Label:       l.T("details.start"),
-				Description: truncate(l.T("details.start_help", zoneLabel(d.zone(), time.Now())), 100),
-				Component: discordgo.TextInput{CustomID: "start", Style: discordgo.TextInputShort, Value: d.StartInput,
+				Description: truncate(l.T("details.start_help", zoneLabel(zone, time.Now())), 100),
+				Component: discordgo.TextInput{CustomID: "start", Style: discordgo.TextInputShort, Value: start,
 					Placeholder: l.T("details.start_ph"), Required: &optional, MaxLength: 30},
 			},
 			discordgo.Label{
 				Label: l.T("details.note"),
-				Component: discordgo.TextInput{CustomID: "note", Style: discordgo.TextInputParagraph, Value: d.Note,
+				Component: discordgo.TextInput{CustomID: "note", Style: discordgo.TextInputParagraph, Value: note,
 					Placeholder: l.T("details.note_ph"), Required: &optional, MaxLength: 300},
 			},
 		},
 	}
+}
+
+// startInput writes a start the way the form reads it back, in the
+// leader's time zone.
+func startInput(at time.Time, zone *time.Location) string {
+	if at.IsZero() {
+		return ""
+	}
+	return at.In(zone).Format("02.01.2006 15:04")
+}
+
+// detailsSummary is the gear score, start and note of a draft or a post.
+func detailsSummary(minGS, gameGS int, startAt time.Time, legacyStart, note string, l i18n.Lang) string {
+	gs := l.T("draft.gs_none")
+	if minGS > 0 {
+		gs = l.GS(minGS) + "+"
+	}
+	if gameGS > 0 {
+		gs += l.T("draft.gs_game", l.GS(gameGS))
+	}
+	return l.T("draft.summary", gs, startText(startAt, legacyStart, l), orDefault(escape(truncate(note, 120)), l.T("draft.no_note")))
 }
 
 // joinModal asks a player for their class, the role they fill with it, and
@@ -339,7 +367,7 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	head := l.T("manage.title", escape(dungeon.Name))
-	if line := difficultyLine(dungeon, p.ModeID, p.MinGS, l); line != "" {
+	if line := difficultyLine(dungeon, p.ModeID, 0, l); line != "" {
 		head += line + "\n"
 	}
 	switch p.Status {
@@ -353,7 +381,8 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 
 	deleteButton := discordgo.Button{CustomID: customID(actDelete, p.ID), Label: l.T("manage.delete"),
 		Style: discordgo.DangerButton, Emoji: emoji("🗑️")}
-	comps := []discordgo.MessageComponent{text(head), divider(), text(b.rosterText(p, "", true, l))}
+	comps := []discordgo.MessageComponent{text(head), text(detailsSummary(p.MinGS, 0, p.StartAt, p.Start, p.Note, l)),
+		divider(), text(b.rosterText(p, "", true, l))}
 	if !p.Active() {
 		comps = append(comps,
 			discordgo.ActionsRow{Components: []discordgo.MessageComponent{deleteButton}},
@@ -371,6 +400,8 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 	}
 	comps = append(comps,
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{CustomID: customID(actEdit, p.ID), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
+				Emoji: emoji("✏️")},
 			discordgo.Button{CustomID: customID(actLess, p.ID), Label: l.T("manage.less"),
 				Style: discordgo.SecondaryButton, Disabled: p.Missing == 0},
 			discordgo.Button{CustomID: customID(actMore, p.ID), Label: l.T("manage.more"),

@@ -62,6 +62,21 @@ type MessageRef struct {
 	Thread bool `json:"thread,omitempty"`
 }
 
+// Webhook is a channel webhook the bot created; it can post in the
+// channel's threads under any name and avatar.
+type Webhook struct {
+	ID    string
+	Token string
+}
+
+// Relay is a copy of a player's thread message in the thread on another
+// server. Webhook is zero when the bot posted the copy itself.
+type Relay struct {
+	ChannelID string
+	MessageID string
+	Webhook   Webhook
+}
+
 type Post struct {
 	ID         string `json:"id"`
 	LeaderID   string `json:"leader_id"`
@@ -128,8 +143,24 @@ func (p *Post) MessageIn(guildID string) (MessageRef, bool) {
 	return MessageRef{}, false
 }
 
+// People is everyone on the post: the leader, the party and the players
+// waiting.
+func (p *Post) People() []Player {
+	out := []Player{{UserID: p.LeaderID, Name: p.LeaderName, GuildID: p.GuildID, GuildName: p.GuildName}}
+	return append(append(out, p.Accepted...), p.Applicants...)
+}
+
 func (p *Post) Has(userID string) bool {
 	return indexOf(p.Applicants, userID) >= 0 || indexOf(p.Accepted, userID) >= 0
+}
+
+// GuildIDs lists the servers that have a copy of the post.
+func (p *Post) GuildIDs() []string {
+	ids := make([]string, 0, len(p.Messages))
+	for _, m := range p.Messages {
+		ids = append(ids, m.GuildID)
+	}
+	return ids
 }
 
 func (p *Post) InGuild(guildID string) bool {
@@ -203,6 +234,24 @@ func (p *Post) AdjustMissing(delta, maxMissing int) error {
 	}
 	p.Missing = max(0, min(maxMissing, p.Missing+delta))
 	p.refreshStatus()
+	return nil
+}
+
+// SetDetails changes the minimum gear score, start and note of an active
+// post. Players already on it stay, whatever their gear score. A new start
+// moves the expiry to ttl after it, or after now for a run without one.
+func (p *Post) SetDetails(minGS int, startAt time.Time, note string, ttl time.Duration, now time.Time) error {
+	if !p.Active() {
+		return ErrNotOpen
+	}
+	p.MinGS, p.Note = minGS, note
+	if !startAt.Equal(p.StartAt) {
+		p.StartAt, p.Start = startAt, ""
+		p.ExpiresAt = now.Add(ttl)
+		if startAt.After(now) {
+			p.ExpiresAt = startAt.Add(ttl)
+		}
+	}
 	return nil
 }
 

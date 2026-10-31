@@ -49,6 +49,11 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 		return b.leaderUpdate(i, p.ID, func(p *lfg.Post) error { return p.AdjustMissing(delta, limit) })
 	case actClose:
 		return b.leaderUpdate(i, p.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) })
+	case actEdit:
+		if !p.Active() {
+			return b.update(i, b.managePanel(p, l))
+		}
+		return b.showModal(i, b.editModal(p, b.timeZone(userID, i.Locale), l))
 	case actPanel:
 		return b.update(i, b.managePanel(p, l))
 	case actDelete:
@@ -129,16 +134,23 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(pl), escape(p.LeaderName))))
 
-	// The leader is pinged for the first player only, in the language of
-	// their server; the card shows the rest.
+	// The leader is pinged for the first player only, on their own server;
+	// the note shows in the thread on every server, and the card shows the
+	// rest. Everyone who joins is added to the threads.
+	b.learnMembers(p, p.GuildIDs())
 	if pingLeader {
-		b.learnMembers(p, []string{p.GuildID})
-		ll := b.guildLang(p.GuildID)
-		msg := ll.T("ping.leader", p.LeaderID, b.applicantText(pl, p.GuildID, ll), dungeon.Name)
-		if !b.announce(p, p.GuildID, []string{p.LeaderID}, msg) {
+		note := func(guildID string, l i18n.Lang) string {
+			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
+			return l.T("ping.leader", leader, b.applicantText(pl, guildID, l), dungeon.Name)
+		}
+		if !b.announce(p, p.GuildID, []string{p.LeaderID}, true, note) {
+			ll := b.guildLang(p.GuildID)
 			b.dm(p.LeaderID, container(colorOpen,
 				text(ll.T("dm.leader", dungeon.Name, b.playerLine(pl, ll))), manageRow(p.ID, ll)))
 		}
+	}
+	if p, ok := b.store.Post(p.ID); ok {
+		b.addToThreads(p.Messages, []lfg.Player{pl})
 	}
 	return err
 }
@@ -197,23 +209,104 @@ func (b *Bot) onAccept(i *discordgo.Interaction, p lfg.Post, userIDs []string) e
 	if m, ok := dungeon.Mode(p.ModeID); ok {
 		where += " (" + m.Name + ")"
 	}
-	var freshGuilds []string
-	for _, pl := range fresh {
-		freshGuilds = append(freshGuilds, pl.GuildID)
+	if len(fresh) == 0 {
+		return err
 	}
-	b.learnMembers(p, freshGuilds)
+	b.learnMembers(p, p.GuildIDs())
 	for _, pl := range fresh {
-		// Each player hears it in the language of the server they joined from.
-		pll := b.guildLang(pl.GuildID)
-		start := startText(p.StartAt, p.Start, pll)
-		leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, pl.GuildID))
-		msg := pll.T("ping.accepted", pl.UserID, leader, where, b.bringing(pl), start)
-		if !b.announce(p, pl.GuildID, []string{pl.UserID}, msg) {
-			b.dm(pl.UserID, notice(colorFull,
-				pll.T("dm.accepted", escape(p.LeaderName), p.LeaderID, where, b.bringing(pl), start)))
+		// Each player is pinged on the server they joined from; the note
+		// shows in the thread on every server, in its language.
+		note := func(guildID string, l i18n.Lang) string {
+			player := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, guildID))
+			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
+			return l.T("ping.accepted", player, leader, where, b.bringing(pl), startText(p.StartAt, p.Start, l))
+		}
+		if !b.announce(p, pl.GuildID, []string{pl.UserID}, true, note) {
+			pll := b.guildLang(pl.GuildID)
+			b.dm(pl.UserID, notice(colorFull, pll.T("dm.accepted", escape(p.LeaderName), p.LeaderID, where, b.bringing(pl),
+				startText(p.StartAt, p.Start, pll))))
 		}
 	}
+	// They joined the threads as applicants; this covers anyone who wasn't
+	// added then.
+	if p, ok := b.store.Post(p.ID); ok {
+		b.addToThreads(p.Messages, fresh)
+	}
 	return err
+}
+
+// onEditSubmit applies a new gear score, start and note from the form on
+// the manage panel, and redraws the panel. The threads hear what changed.
+func (b *Bot) onEditSubmit(i *discordgo.Interaction, postID string) error {
+	userID, _ := interactionUser(i)
+	l := lang(i)
+	before, ok := b.store.Post(postID)
+	switch {
+	case !ok:
+		return b.reply(i, notice(colorClosed, errorText(lfg.ErrNotFound, l)))
+	case userID != before.LeaderID:
+		return b.reply(i, notice(colorClosed, l.T("manage.only_leader")))
+	}
+	values := modalValues(i.ModalSubmitData().Components)
+	gs, err := parseGS(first(values["gs"]))
+	if err != nil {
+		return b.reply(i, notice(colorClosed, l.T("draft.bad_gs")))
+	}
+	// The form shows the current start; left as it was, it stays even once
+	// it has passed.
+	now := time.Now()
+	zone := b.timeZone(userID, i.Locale)
+	startAt := before.StartAt
+	if input := strings.TrimSpace(first(values["start"])); input != startInput(before.StartAt, zone) {
+		at, err := parseStart(input, zone, now)
+		switch {
+		case err != nil:
+			return b.reply(i, notice(colorClosed, l.T("draft.bad_start")))
+		case !at.IsZero() && !at.After(now):
+			return b.reply(i, notice(colorClosed, l.T("draft.start_past")))
+		}
+		startAt = at
+	}
+	note := strings.TrimSpace(first(values["note"]))
+
+	p, err := b.store.UpdatePost(postID, func(p *lfg.Post) error {
+		return p.SetDetails(gs, startAt, note, b.game.PostTTL(), now)
+	})
+	if err != nil {
+		return b.reply(i, notice(colorClosed, errorText(err, l)))
+	}
+	b.scheduleSync(p.ID)
+	err = b.update(i, b.managePanel(p, l))
+	b.announceChanges(before, p)
+	return err
+}
+
+// announceChanges tells the existing threads what the leader changed,
+// without pinging anyone.
+func (b *Bot) announceChanges(before, after lfg.Post) {
+	startChanged := !before.StartAt.Equal(after.StartAt)
+	if !startChanged && before.MinGS == after.MinGS && before.Note == after.Note {
+		return
+	}
+	b.learnMembers(after, after.GuildIDs())
+	b.announce(after, "", nil, false, func(guildID string, l i18n.Lang) string {
+		leader := who(after.LeaderID, after.LeaderName, b.mentionable(after.LeaderID, after.GuildID, guildID))
+		lines := []string{l.T("thread.edited", leader)}
+		if startChanged {
+			lines = append(lines, l.T("card.start")+startText(after.StartAt, "", l))
+		}
+		if before.MinGS != after.MinGS {
+			gs := l.T("thread.gs_none")
+			if after.MinGS > 0 {
+				gs = l.GS(after.MinGS) + "+"
+			}
+			lines = append(lines, l.T("thread.gs", gs))
+		}
+		if before.Note != after.Note {
+			lines = append(lines, l.T("thread.note", orDefault(escape(after.Note), l.T("draft.no_note"))))
+		}
+		return strings.Join(lines, "\n")
+	})
 }
 
 func (b *Bot) onKick(i *discordgo.Interaction, p lfg.Post, userIDs []string) error {
@@ -458,8 +551,9 @@ func first(values []string) string {
 // it in the catalog.
 //
 // Nothing else is needed: the bot only edits and deletes its own messages
-// and threads, never reads or replies to messages, and answers commands,
-// buttons and forms through interactions, which need no permission.
+// and threads, reads only what players write in the threads under posts,
+// and answers commands, buttons and forms through interactions, which
+// need no permission.
 var setupChecks = []struct {
 	perm     int64
 	key      string
@@ -468,6 +562,7 @@ var setupChecks = []struct {
 	{discordgo.PermissionViewChannel, "perm.view", true},
 	{discordgo.PermissionSendMessages, "perm.send", true},
 	{discordgo.PermissionCreatePublicThreads | discordgo.PermissionSendMessagesInThreads, "perm.threads", false},
+	{discordgo.PermissionManageWebhooks, "perm.webhooks", false},
 }
 
 // setupReport is the ✅/⚠️/❌ checklist of the bot's permissions in the

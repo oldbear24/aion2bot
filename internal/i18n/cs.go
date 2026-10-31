@@ -122,14 +122,18 @@ var cs = map[string]string{
 	"leave.done":       "Už nejsi v náboru **%s**.",
 
 	// Pings in the thread under a post, and DMs.
-	"ping.leader":   "✋ <@%s> %s se chce přidat do tvého náboru **%s**. Hráče přijmeš přes ⚙️ **Spravovat** u náboru.\n-# Zmínku dostaneš jen u prvního hráče, další uvidíš v náboru.",
-	"ping.accepted": "🎉 <@%s> jsi v partě! %s tě bere do %s jako %s.\n🕒 Začátek: %s · napiš vedoucímu o pozvánku ve hře.",
-	"dm.leader":     "### ✋ Nový hráč pro tvůj nábor %s\n%s se chce přidat.",
-	"dm.accepted":   "### 🎉 Jsi v partě!\n**%s** (<@%s>) tě bere do %s jako %s.\n🕒 Začátek: %s\nNapiš vedoucímu o pozvánku ve hře.",
-	"dm.declined":   "**%s** tě tentokrát do **%s** vzít nemůže. Sleduj LFG kanál, třeba najdeš jinou partu!",
-	"dm.removed":    "Už nejsi v partě do **%[2]s** (vedoucí: **%[1]s**).",
-	"player.as":     "**%s** <@%s> jako %s",
-	"player.from":   " ze serveru *%s*",
+	"ping.leader":    "✋ %s %s se chce přidat do tvého náboru **%s**. Hráče přijmeš přes ⚙️ **Spravovat** u náboru.\n-# Zmínku dostaneš jen u prvního hráče, další uvidíš v náboru. Co se napíše sem, uvidí i vlákno na ostatních propojených serverech.",
+	"ping.accepted":  "🎉 %s jsi v partě! %s tě bere do %s jako %s.\n🕒 Začátek: %s · napiš vedoucímu o pozvánku ve hře.",
+	"thread.edited":  "✏️ Změna v náboru od %s:",
+	"thread.gs":      "📈 **Min. GS:** %s",
+	"thread.gs_none": "žádné",
+	"thread.note":    "📝 **Poznámka:** %s",
+	"dm.leader":      "### ✋ Nový hráč pro tvůj nábor %s\n%s se chce přidat.",
+	"dm.accepted":    "### 🎉 Jsi v partě!\n**%s** (<@%s>) tě bere do %s jako %s.\n🕒 Začátek: %s\nNapiš vedoucímu o pozvánku ve hře.",
+	"dm.declined":    "**%s** tě tentokrát do **%s** vzít nemůže. Sleduj LFG kanál, třeba najdeš jinou partu!",
+	"dm.removed":     "Už nejsi v partě do **%[2]s** (vedoucí: **%[1]s**).",
+	"player.as":      "**%s** <@%s> jako %s",
+	"player.from":    " ze serveru *%s*",
 
 	// The leader's manage panel.
 	"manage.title":       "### ⚙️ Tvůj nábor: %s\n",
@@ -143,7 +147,7 @@ var cs = map[string]string{
 	"manage.less":        "Našel se jinde (−1)",
 	"manage.more":        "Potřebujeme dalšího (+1)",
 	"manage.close":       "Uzavřít nábor",
-	"manage.footer":      "-# Přijatí hráči dostanou jednu zmínku ve vláknu pod náborem. **Uzavřít** nechá nábor viditelný 24 hodin, **Smazat** ho hned odstraní ze všech serverů.",
+	"manage.footer":      "-# ✏️ kdykoli změní GS, začátek a poznámku. Přijatí hráči dostanou jednu zmínku ve vláknu pod náborem. **Uzavřít** nechá nábor viditelný 24 hodin, **Smazat** ho hned odstraní ze všech serverů.",
 	"manage.only_leader": "Nábor může spravovat jen jeho vedoucí.",
 	"delete.confirm":     "### 🗑️ Smazat nábor do %s?\nZmizí ze všech serverů i s vláknem pod ním. Nejde to vrátit.",
 	"delete.yes":         "Ano, smazat",
@@ -183,7 +187,9 @@ var cs = map[string]string{
 	"perm.send":         "Odesílat zprávy",
 	"perm.send.why":     "abych mohl posílat nábory",
 	"perm.threads":      "Vytvářet veřejná vlákna + Odesílat zprávy ve vláknech",
-	"perm.threads.why":  "abych mohl označovat hráče ve vláknu pod náborem (jinak jim píšu do soukromých zpráv)",
+	"perm.threads.why":  "abych mohl označovat hráče ve vláknu pod náborem a držet ho stejné jako na propojených serverech (jinak jim píšu do soukromých zpráv)",
+	"perm.webhooks":     "Spravovat webhooky",
+	"perm.webhooks.why": "aby zprávy z vláken na propojených serverech měly jméno a avatar hráče (jinak je posílám sám za sebe)",
 	"report.title":      "**Moje oprávnění v <#%s>**",
 	"report.missing":    "\n❌ **%s** — potřebné, %s",
 	"report.warn":       "\n⚠️ **%s** — potřebné, %s",
@@ -233,8 +239,8 @@ var cs = map[string]string{
 
 	// /help.
 	"help.title":  "## 📖 AION 2 – hledání party",
-	"help.find":   "### 🔎 Najdi partu\n• Sleduj LFG kanál: objevují se tam nábory z tohoto serveru i z propojených serverů.\n• Klikni na **✋ Přidat se**, vyber roli a povolání a zadej své GS.\n• Až tě vedoucí přijme, dostaneš jednu zmínku ve vláknu pod náborem. Napiš mu o pozvánku ve hře.\n• Už nechceš? Klikni u náboru na **Odejít**.\n• %s uloží tvou hlavní roli, povolání a GS, takže se ti formulář předvyplní.",
-	"help.post":   "### 📣 Založ nábor\n• %s otevře soukromý panel: dungeon nebo raid, obtížnost, koho hledáte (%s, konkrétní povolání nebo Libovolné povolání) a kolik hráčů chybí.\n• Nepovinně: minimální GS, začátek a poznámka.\n• **Zveřejnit** pošle nábor na všechny propojené servery. Až se přidá první hráč, dostaneš jednu zmínku ve vláknu pod náborem.\n• **⚙️ Spravovat** u náboru: přijímej nebo odmítej hráče, uprav počet chybějících (−1/+1), **🔒 Uzavři** nebo **🗑️ Smaž** nábor.\n• Otevřených náborů můžeš mít až %d. Nábory platí %s a 24 hodin po skončení zmizí.",
+	"help.find":   "### 🔎 Najdi partu\n• Sleduj LFG kanál: objevují se tam nábory z tohoto serveru i z propojených serverů.\n• Klikni na **✋ Přidat se**, vyber roli a povolání a zadej své GS. Bot tě přidá do vlákna pod náborem.\n• V tom vláknu se domluvíš s vedoucím a partou: co tam napíšeš, uvidí i vlákno na všech propojených serverech.\n• Až tě vedoucí přijme, dostaneš ve vláknu jednu zmínku. Napiš mu o pozvánku ve hře.\n• Už nechceš? Klikni u náboru na **Odejít**.\n• %s uloží tvou hlavní roli, povolání a GS, takže se ti formulář předvyplní.",
+	"help.post":   "### 📣 Založ nábor\n• %s otevře soukromý panel: dungeon nebo raid, obtížnost, koho hledáte (%s, konkrétní povolání nebo Libovolné povolání) a kolik hráčů chybí.\n• Nepovinně: minimální GS, začátek a poznámka.\n• **Zveřejnit** pošle nábor na všechny propojené servery. Až se přidá první hráč, dostaneš jednu zmínku ve vláknu pod náborem.\n• **⚙️ Spravovat** u náboru: přijímej nebo odmítej hráče, měň GS, začátek a poznámku (✏️), uprav počet chybějících (−1/+1), **🔒 Uzavři** nebo **🗑️ Smaž** nábor.\n• Vlákno pod náborem je sdílené: ty i všichni přihlášení v něm jste na každém propojeném serveru, kde jste členy, a zprávy se dostanou všude.\n• Otevřených náborů můžeš mít až %d. Nábory platí %s a 24 hodin po skončení zmizí.",
 	"help.admin":  "### 🛠️ Pro správce serveru\n• %s nastaví LFG kanál, roli k označení a jazyk a zkontroluje oprávnění bota.\n• %s kdykoli zkontroluje oprávnění, roli k označení a propojení serveru.\n• %s založí síť a dá kód pro připojení; ostatní servery se připojí přes %s a sdílí nábory. %s ukáže propojené servery.\n• %s vypne příjem náborů tady; %s zveřejní tento návod pro všechny.",
 	"help.footer": "-# %s ukáže tento návod jen tobě.",
 

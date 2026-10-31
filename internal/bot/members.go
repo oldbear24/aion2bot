@@ -80,13 +80,10 @@ func (b *Bot) mentionable(userID, homeGuildID, guildID string) bool {
 // and pings only read the cache, so they never wait on Discord; this runs
 // before them.
 func (b *Bot) learnMembers(p lfg.Post, guildIDs []string) {
-	people := []lfg.Player{{UserID: p.LeaderID, GuildID: p.GuildID}}
-	people = append(append(people, p.Applicants...), p.Accepted...)
-
 	now := time.Now()
 	var unknown []memberKey
 	for _, guildID := range guildIDs {
-		for _, pl := range people {
+		for _, pl := range p.People() {
 			if pl.GuildID == guildID {
 				continue
 			}

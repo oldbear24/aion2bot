@@ -116,14 +116,18 @@ var en = map[string]string{
 	"leave.done":       "You left the **%s** post.",
 
 	// Pings in the thread under a post, and DMs.
-	"ping.leader":   "✋ <@%s> %s wants to join your **%s** run. Accept players with ⚙️ **Manage** on the post.\n-# You're only pinged for the first player; the post lists everyone who joins.",
-	"ping.accepted": "🎉 <@%s> you're in! %s accepted you for %s as %s.\n🕒 Start: %s · message the leader for your in-game invite.",
-	"dm.leader":     "### ✋ New player for your %s run\n%s wants to join.",
-	"dm.accepted":   "### 🎉 You're in!\n**%s** (<@%s>) accepted you for %s as %s.\n🕒 Start: %s\nMessage them to get your in-game invite.",
-	"dm.declined":   "**%s** can't take you for **%s** this time. Keep an eye on the LFG channel for other groups!",
-	"dm.removed":    "**%s** removed you from their **%s** party.",
-	"player.as":     "**%s** <@%s> as %s",
-	"player.from":   " from *%s*",
+	"ping.leader":    "✋ %s %s wants to join your **%s** run. Accept players with ⚙️ **Manage** on the post.\n-# You're only pinged for the first player; the post lists everyone who joins. Everything written here also shows in the thread on the other linked servers.",
+	"ping.accepted":  "🎉 %s you're in! %s accepted you for %s as %s.\n🕒 Start: %s · message the leader for your in-game invite.",
+	"thread.edited":  "✏️ %s changed the post:",
+	"thread.gs":      "📈 **Min. gear score:** %s",
+	"thread.gs_none": "none",
+	"thread.note":    "📝 **Note:** %s",
+	"dm.leader":      "### ✋ New player for your %s run\n%s wants to join.",
+	"dm.accepted":    "### 🎉 You're in!\n**%s** (<@%s>) accepted you for %s as %s.\n🕒 Start: %s\nMessage them to get your in-game invite.",
+	"dm.declined":    "**%s** can't take you for **%s** this time. Keep an eye on the LFG channel for other groups!",
+	"dm.removed":     "**%s** removed you from their **%s** party.",
+	"player.as":      "**%s** <@%s> as %s",
+	"player.from":    " from *%s*",
 
 	// The leader's manage panel.
 	"manage.title":       "### ⚙️ Your %s post\n",
@@ -137,7 +141,7 @@ var en = map[string]string{
 	"manage.less":        "Found one elsewhere (−1)",
 	"manage.more":        "Need one more (+1)",
 	"manage.close":       "Close post",
-	"manage.footer":      "-# Accepted players are pinged once, in the thread under the post. **Close** keeps the post visible for 24 hours; **Delete** removes it from every server now.",
+	"manage.footer":      "-# ✏️ changes the gear score, start and note at any time. Accepted players are pinged once, in the thread under the post. **Close** keeps the post visible for 24 hours; **Delete** removes it from every server now.",
 	"manage.only_leader": "Only the leader of this post can manage it.",
 	"delete.confirm":     "### 🗑️ Delete your %s post?\nIt disappears from every server, together with its thread. This can't be undone.",
 	"delete.yes":         "Yes, delete it",
@@ -177,7 +181,9 @@ var en = map[string]string{
 	"perm.send":         "Send Messages",
 	"perm.send.why":     "to post runs",
 	"perm.threads":      "Create Public Threads + Send Messages in Threads",
-	"perm.threads.why":  "to ping players in a thread under each post (otherwise they get a DM)",
+	"perm.threads.why":  "to ping players in a thread under each post and keep it in step with the linked servers (otherwise they get a DM)",
+	"perm.webhooks":     "Manage Webhooks",
+	"perm.webhooks.why": "to show messages from the threads on linked servers under each player's name and avatar (otherwise I post them myself)",
 	"report.title":      "**My permissions in <#%s>**",
 	"report.missing":    "\n❌ **%s** — needed %s",
 	"report.warn":       "\n⚠️ **%s** — needed %s",
@@ -227,8 +233,8 @@ var en = map[string]string{
 
 	// /help.
 	"help.title":  "## 📖 AION 2 party finder",
-	"help.find":   "### 🔎 Find a party\n• Watch the LFG channel: posts from this server and the servers linked with it show up there.\n• Click **✋ Join**, pick your role and class, and enter your gear score.\n• When the leader accepts you, you're pinged once in the thread under the post. Message them for the in-game invite.\n• Changed your mind? Click **Leave** on the post.\n• %s saves your main role, class and gear score, so the join form is filled in for you.",
-	"help.post":   "### 📣 Post a run\n• %s opens a private panel: dungeon or raid, difficulty, who you need (%s, specific classes or Any class) and how many players are missing.\n• Optional: a minimum gear score, a start time and a note.\n• **Post** sends it to every linked server. You're pinged once, in the thread under the post, when the first player joins.\n• **⚙️ Manage** on the post: accept or decline players, adjust the missing count (−1/+1), **🔒 Close** or **🗑️ Delete** it.\n• You can have up to %d open runs. Runs stay open for %s and disappear 24 hours after they end.",
+	"help.find":   "### 🔎 Find a party\n• Watch the LFG channel: posts from this server and the servers linked with it show up there.\n• Click **✋ Join**, pick your role and class, and enter your gear score. You're added to the thread under the post.\n• Talk to the leader and the party in that thread: what you write there also shows in the thread on every linked server.\n• When the leader accepts you, you're pinged once in the thread. Message them for the in-game invite.\n• Changed your mind? Click **Leave** on the post.\n• %s saves your main role, class and gear score, so the join form is filled in for you.",
+	"help.post":   "### 📣 Post a run\n• %s opens a private panel: dungeon or raid, difficulty, who you need (%s, specific classes or Any class) and how many players are missing.\n• Optional: a minimum gear score, a start time and a note.\n• **Post** sends it to every linked server. You're pinged once, in the thread under the post, when the first player joins.\n• **⚙️ Manage** on the post: accept or decline players, change the gear score, start and note (✏️), adjust the missing count (−1/+1), **🔒 Close** or **🗑️ Delete** it.\n• The thread under the post is shared: you and everyone who joined are in it on every linked server you're on, and messages reach all of them.\n• You can have up to %d open runs. Runs stay open for %s and disappear 24 hours after they end.",
 	"help.admin":  "### 🛠️ Server admins\n• %s picks the LFG channel, the role to ping and the language, and checks the bot's permissions.\n• %s checks permissions, the ping role and the server's links at any time.\n• %s starts a network and gives a join code; other servers use %s to link up and share posts. %s shows the linked servers.\n• %s stops posts arriving here; %s posts this guide for everyone.",
 	"help.footer": "-# %s shows this guide just to you.",
 

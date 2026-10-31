@@ -135,3 +135,6 @@ A tag like `v1.1.0-rc.1` publishes only `1.1.0-rc.1`, without moving `latest`.
 | `unable to open database file` | The volume isn't writable by user 65532. Run the `chown` command from section 6 |
 | `denied` or `not found` when pulling | Check the image name and tag against the [releases](https://github.com/oldbear24/aion2bot/releases) |
 | Pings arrive as DMs instead of in a thread | The bot lacks thread permissions in the LFG channel. Run `/lfg-check` |
+| `The Message Content intent is off` in the log; thread messages aren't relayed to other servers | Turn on **Message Content Intent** under **Bot** in the Developer Portal, then `docker compose restart` |
+| Relayed thread messages come from the bot instead of under the player's name | The bot lacks **Manage Webhooks** in that server's LFG channel. Run `/lfg-check` |
+| Roles and classes show plain emojis instead of icons | The icon upload failed at startup; the log says why. They're uploaded again on the next start |

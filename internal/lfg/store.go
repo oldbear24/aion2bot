@@ -87,6 +87,20 @@ CREATE TABLE IF NOT EXISTS messages (
 	kind         TEXT NOT NULL DEFAULT 'card'
 );
 CREATE INDEX IF NOT EXISTS messages_by_post ON messages (post_id);
+CREATE TABLE IF NOT EXISTS relays (
+	message_id    TEXT PRIMARY KEY,
+	source_id     TEXT NOT NULL,
+	post_id       TEXT NOT NULL REFERENCES posts (id) ON DELETE CASCADE,
+	channel_id    TEXT NOT NULL,
+	webhook_id    TEXT NOT NULL,
+	webhook_token TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS relays_by_source ON relays (source_id);
+CREATE TABLE IF NOT EXISTS webhooks (
+	channel_id TEXT PRIMARY KEY,
+	webhook_id TEXT NOT NULL,
+	token      TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS networks (
 	id             TEXT PRIMARY KEY,
 	name           TEXT NOT NULL,
@@ -392,6 +406,89 @@ func (s *Store) AddReply(id string, m MessageRef) {
 		VALUES (?, ?, ?, ?, '', 'reply')`, m.MessageID, id, m.GuildID, m.ChannelID)
 	if err != nil {
 		log.Printf("store: save reply of post %s: %v", id, err)
+	}
+}
+
+// PostByThread finds the post whose card a thread was started from.
+// Discord gives such a thread the ID of the card.
+func (s *Store) PostByThread(threadID string) (Post, bool) {
+	var id string
+	err := s.db.QueryRow(`SELECT post_id FROM messages WHERE message_id = ? AND kind = 'card'`, threadID).Scan(&id)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("store: find post of thread %s: %v", threadID, err)
+		}
+		return Post{}, false
+	}
+	return s.Post(id)
+}
+
+// AddRelays records the copies of a player's message relayed to the
+// threads on other servers, so edits and deletes can follow it.
+func (s *Store) AddRelays(postID, sourceID string, copies []Relay) {
+	err := s.inTx(func(tx *sql.Tx) error {
+		for _, c := range copies {
+			_, err := tx.Exec(`INSERT OR REPLACE INTO relays (message_id, source_id, post_id, channel_id, webhook_id, webhook_token)
+				VALUES (?, ?, ?, ?, ?, ?)`, c.MessageID, sourceID, postID, c.ChannelID, c.Webhook.ID, c.Webhook.Token)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("store: save relays of message %s: %v", sourceID, err)
+	}
+}
+
+// Relays lists the copies of a relayed message.
+func (s *Store) Relays(sourceID string) []Relay {
+	rows, err := s.db.Query(`SELECT message_id, channel_id, webhook_id, webhook_token FROM relays WHERE source_id = ?`, sourceID)
+	if err != nil {
+		log.Printf("store: list relays of message %s: %v", sourceID, err)
+		return nil
+	}
+	defer rows.Close()
+	var out []Relay
+	for rows.Next() {
+		var r Relay
+		if err := rows.Scan(&r.MessageID, &r.ChannelID, &r.Webhook.ID, &r.Webhook.Token); err == nil {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (s *Store) RemoveRelays(sourceID string) {
+	if _, err := s.db.Exec(`DELETE FROM relays WHERE source_id = ?`, sourceID); err != nil {
+		log.Printf("store: forget relays of message %s: %v", sourceID, err)
+	}
+}
+
+// Webhook is the webhook the bot relays players' messages through in a
+// channel's threads.
+func (s *Store) Webhook(channelID string) (Webhook, bool) {
+	var w Webhook
+	err := s.db.QueryRow(`SELECT webhook_id, token FROM webhooks WHERE channel_id = ?`, channelID).Scan(&w.ID, &w.Token)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("store: load webhook of channel %s: %v", channelID, err)
+		}
+		return Webhook{}, false
+	}
+	return w, true
+}
+
+func (s *Store) SetWebhook(channelID string, w Webhook) {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO webhooks (channel_id, webhook_id, token) VALUES (?, ?, ?)`, channelID, w.ID, w.Token)
+	if err != nil {
+		log.Printf("store: save webhook of channel %s: %v", channelID, err)
+	}
+}
+
+func (s *Store) RemoveWebhook(channelID string) {
+	if _, err := s.db.Exec(`DELETE FROM webhooks WHERE channel_id = ?`, channelID); err != nil {
+		log.Printf("store: forget webhook of channel %s: %v", channelID, err)
 	}
 }
 

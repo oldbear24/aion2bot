@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,6 +103,58 @@ func TestStorePostsRoundTrip(t *testing.T) {
 		if m.Thread != (m.MessageID == "m1") {
 			t.Errorf("only the card has a thread: %+v", m)
 		}
+	}
+}
+
+func TestThreadsRelaysAndWebhooks(t *testing.T) {
+	s, _ := openTestStore(t)
+	p, err := s.CreatePost(newPost(2), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.AddMessages(p.ID, []MessageRef{{GuildID: "g1", ChannelID: "c1", MessageID: "m1"}, {GuildID: "g2", ChannelID: "c2", MessageID: "m2"}})
+	s.AddReply(p.ID, MessageRef{GuildID: "g1", ChannelID: "m1", MessageID: "r1"})
+
+	// A thread has its card's ID; replies and unknown channels aren't posts.
+	if got, ok := s.PostByThread("m2"); !ok || got.ID != p.ID {
+		t.Fatalf("thread m2: ok %v post %q", ok, got.ID)
+	}
+	if _, ok := s.PostByThread("r1"); ok {
+		t.Fatal("a reply is not a card")
+	}
+	if _, ok := s.PostByThread("elsewhere"); ok {
+		t.Fatal("unknown channel found a post")
+	}
+
+	hook := Webhook{ID: "w2", Token: "secret"}
+	s.AddRelays(p.ID, "src", []Relay{{ChannelID: "m2", MessageID: "copy2", Webhook: hook}, {ChannelID: "m3", MessageID: "copy3"}})
+	got := s.Relays("src")
+	slices.SortFunc(got, func(a, b Relay) int { return strings.Compare(a.MessageID, b.MessageID) })
+	if len(got) != 2 || got[0].Webhook != hook || got[1].Webhook != (Webhook{}) || got[1].ChannelID != "m3" {
+		t.Fatalf("relays %+v", got)
+	}
+	s.RemoveRelays("src")
+	if got := s.Relays("src"); len(got) != 0 {
+		t.Fatalf("relays left after removing: %+v", got)
+	}
+
+	// Relays go with their post.
+	s.AddRelays(p.ID, "src2", []Relay{{ChannelID: "m2", MessageID: "copy4"}})
+	s.DeletePost(p.ID)
+	if got := s.Relays("src2"); len(got) != 0 {
+		t.Fatalf("relays outlived their post: %+v", got)
+	}
+
+	if _, ok := s.Webhook("c1"); ok {
+		t.Fatal("no webhook was set")
+	}
+	s.SetWebhook("c1", hook)
+	if w, ok := s.Webhook("c1"); !ok || w != hook {
+		t.Fatalf("webhook %+v ok %v", w, ok)
+	}
+	s.RemoveWebhook("c1")
+	if _, ok := s.Webhook("c1"); ok {
+		t.Fatal("webhook left after removing")
 	}
 }
 
