@@ -54,7 +54,7 @@ func TestStorePostsRoundTrip(t *testing.T) {
 
 	// Players keep their order, their state and their characters.
 	p, err = s.UpdatePost(p.ID, func(p *Post) error {
-		p.LeaderChar = "Lea"
+		p.LeaderChar, p.LeaderClass, p.LeaderRole, p.LeaderGS = "Lea", "templar", "tank", 3100
 		for _, id := range []string{"a", "b", "c"} {
 			if err := p.AddApplicant(Player{UserID: id, ClassID: "cleric", RoleID: "healer", GS: 3000, GuildID: "g1", Char: "Char" + id}); err != nil {
 				return err
@@ -97,6 +97,9 @@ func TestStorePostsRoundTrip(t *testing.T) {
 		t.Fatalf("reserves %v", got.Reserves)
 	case got.LeaderChar != "Lea" || got.FilledAt.UnixMilli() != p.FilledAt.UnixMilli() || got.FilledAt.IsZero():
 		t.Fatalf("leader character %q, filled %v", got.LeaderChar, got.FilledAt)
+	case got.Leader() != (Player{UserID: p.LeaderID, Name: p.LeaderName, ClassID: "templar", RoleID: "tank", GS: 3100,
+		GuildID: p.GuildID, GuildName: p.GuildName, Char: "Lea"}):
+		t.Fatalf("leader %+v", got.Leader())
 	case !slices.Equal(got.LookingFor, []string{"tank", "cleric"}) || !slices.Equal(got.Pinged, []string{"b"}):
 		t.Fatalf("looking for %v, pinged %v", got.LookingFor, got.Pinged)
 	case !got.StartAt.Equal(p.StartAt):

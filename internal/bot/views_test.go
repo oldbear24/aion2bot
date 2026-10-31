@@ -603,6 +603,32 @@ func TestChanterHealsWithoutCleric(t *testing.T) {
 	}
 }
 
+func TestLeaderIsInTheParty(t *testing.T) {
+	b := testBot(t)
+	chanter := lfg.Player{UserID: "c", Name: "Cha", ClassID: "chanter", RoleID: "healer"}
+	p := lfg.Post{LeaderID: "L", LeaderName: "Lea", Status: lfg.StatusOpen, Missing: 3, Accepted: []lfg.Player{chanter}}
+
+	// A leader who didn't pick a class still leads the party, without one.
+	roster := b.rosterText(p, "", true, i18n.English)
+	if !strings.HasPrefix(roster, "**✅ In the party (2)**\n• 👑 **Lea** <@L>\n") {
+		t.Errorf("the leader must come first in the party:\n%s", roster)
+	}
+	if strings.Contains(roster, "❔") {
+		t.Errorf("a leader without a class shows an unknown one:\n%s", roster)
+	}
+
+	// A Cleric leading the party heals, so the Chanter shows as DPS.
+	p.LeaderClass, p.LeaderRole, p.LeaderGS = "cleric", "healer", 3100
+	if got := b.shownRole(p, chanter); got != "dps" {
+		t.Errorf("chanter next to a cleric leader shows as %q", got)
+	}
+	roster = b.rosterText(p, "", true, i18n.English)
+	want := b.roleBullet("healer") + " 👑 **Lea** <@L> — " + b.game.ClassOrUnknown("cleric").Emoji + " Cleric · GS 3,100"
+	if !strings.Contains(roster, want) {
+		t.Errorf("roster misses %q:\n%s", want, roster)
+	}
+}
+
 func TestCustomIDRoundTrip(t *testing.T) {
 	action, postID, ok := parseCustomID(customID(actAccept, "abc123"))
 	if !ok || action != actAccept || postID != "abc123" {

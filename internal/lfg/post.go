@@ -85,11 +85,16 @@ type Post struct {
 	LeaderName string `json:"leader_name"`
 	// LeaderChar is the leader's in-game character name.
 	LeaderChar string `json:"leader_char,omitempty"`
-	GuildID    string `json:"guild_id"`
-	GuildName  string `json:"guild_name"`
-	DungeonID  string `json:"dungeon_id"`
-	ModeID     string `json:"mode_id,omitempty"`
-	MinGS      int    `json:"min_gs,omitempty"`
+	// LeaderClass, LeaderRole and LeaderGS are what the leader plays in
+	// the party; the class is empty when they didn't say.
+	LeaderClass string `json:"leader_class_id,omitempty"`
+	LeaderRole  string `json:"leader_role_id,omitempty"`
+	LeaderGS    int    `json:"leader_gs,omitempty"`
+	GuildID     string `json:"guild_id"`
+	GuildName   string `json:"guild_name"`
+	DungeonID   string `json:"dungeon_id"`
+	ModeID      string `json:"mode_id,omitempty"`
+	MinGS       int    `json:"min_gs,omitempty"`
 	// LookingFor holds role IDs, class IDs, or just "any". It keeps its old
 	// JSON name so posts saved before roles existed still load.
 	LookingFor []string `json:"class_ids"`
@@ -156,15 +161,17 @@ func (p *Post) MessageIn(guildID string) (MessageRef, bool) {
 	return MessageRef{}, false
 }
 
-// People is everyone on the post: the leader, the party, the players
-// waiting and the reserves.
-func (p *Post) People() []Player {
-	return slices.Concat([]Player{p.Leader()}, p.Accepted, p.Applicants, p.Reserves)
-}
+// People is everyone on the post: the party, the players waiting and
+// the reserves.
+func (p *Post) People() []Player { return slices.Concat(p.Party(), p.Applicants, p.Reserves) }
+
+// Party is the leader followed by the players they accepted.
+func (p *Post) Party() []Player { return slices.Concat([]Player{p.Leader()}, p.Accepted) }
 
 // Leader is the post's leader as a player.
 func (p *Post) Leader() Player {
-	return Player{UserID: p.LeaderID, Name: p.LeaderName, GuildID: p.GuildID, GuildName: p.GuildName, Char: p.LeaderChar}
+	return Player{UserID: p.LeaderID, Name: p.LeaderName, ClassID: p.LeaderClass, RoleID: p.LeaderRole, GS: p.LeaderGS,
+		GuildID: p.GuildID, GuildName: p.GuildName, Char: p.LeaderChar}
 }
 
 func (p *Post) Has(userID string) bool {

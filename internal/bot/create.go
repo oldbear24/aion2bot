@@ -10,6 +10,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"aion2bot/internal/config"
 	"aion2bot/internal/i18n"
 	"aion2bot/internal/lfg"
 )
@@ -24,8 +25,12 @@ type draft struct {
 	ModeID     string
 	LookingFor []string
 	Missing    int
-	MinGS      int
-	Note       string
+	// Class and Role are what the leader plays, from their profile until
+	// they pick something else.
+	Class string
+	Role  string
+	MinGS int
+	Note  string
 	// StartAt is when the run starts, zero for "as soon as the party is
 	// full". StartInput is what the leader typed, to show it again.
 	StartAt    time.Time
@@ -128,7 +133,8 @@ func (b *Bot) cmdLFG(i *discordgo.Interaction) error {
 	if len(b.store.Targets(i.GuildID)) == 0 {
 		return b.reply(i, notice(colorClosed, l.T("draft.nowhere")))
 	}
-	d := draft{Missing: 1, Zone: b.timeZone(userID, i.Locale)}
+	prof, _ := b.store.Profile(userID)
+	d := draft{Missing: 1, Class: prof.ClassID, Role: prof.RoleID, Zone: b.timeZone(userID, i.Locale)}
 	b.putDraft(userID, d)
 	return b.reply(i, b.draftPanel(d, l))
 }
@@ -152,6 +158,10 @@ func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string) e
 	case fieldMissing:
 		if n, err := strconv.Atoi(first(values)); err == nil && n >= 1 {
 			d.Missing = min(n, b.draftMaxMissing(d))
+		}
+	case fieldPlays:
+		if classID, roleID, _ := strings.Cut(first(values), "|"); b.game.Fits([]string{config.AnyID}, classID, roleID) {
+			d.Class, d.Role = classID, roleID
 		}
 	case fieldDetails:
 		return b.showModal(i, b.detailsModal(d, l))
@@ -223,21 +233,24 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 	}
 	prof, _ := b.store.Profile(userID)
 	p, err := b.store.CreatePost(lfg.Post{
-		LeaderID:   userID,
-		LeaderName: name,
-		LeaderChar: prof.Char,
-		GuildID:    i.GuildID,
-		GuildName:  b.guildName(i.GuildID),
-		DungeonID:  d.DungeonID,
-		ModeID:     d.ModeID,
-		MinGS:      d.MinGS,
-		LookingFor: d.LookingFor,
-		Missing:    d.Missing,
-		StartAt:    d.StartAt,
-		Note:       d.Note,
-		Status:     lfg.StatusOpen,
-		CreatedAt:  now,
-		ExpiresAt:  expires,
+		LeaderID:    userID,
+		LeaderName:  name,
+		LeaderChar:  prof.Char,
+		LeaderClass: d.Class,
+		LeaderRole:  d.Role,
+		LeaderGS:    prof.GS,
+		GuildID:     i.GuildID,
+		GuildName:   b.guildName(i.GuildID),
+		DungeonID:   d.DungeonID,
+		ModeID:      d.ModeID,
+		MinGS:       d.MinGS,
+		LookingFor:  d.LookingFor,
+		Missing:     d.Missing,
+		StartAt:     d.StartAt,
+		Note:        d.Note,
+		Status:      lfg.StatusOpen,
+		CreatedAt:   now,
+		ExpiresAt:   expires,
 	}, b.game.MaxRunsPerLeader)
 	if errors.Is(err, lfg.ErrTooManyPosts) {
 		b.dropDraft(userID)

@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"aion2bot/internal/i18n"
-	"aion2bot/internal/lfg"
 )
 
 // remind pings the party shortly before a planned start: the leader and
@@ -16,7 +15,7 @@ func (b *Bot) remind(postID string) {
 	if !ok || !p.Active() || len(p.Accepted) == 0 {
 		return
 	}
-	party := append([]lfg.Player{p.Leader()}, p.Accepted...)
+	party := p.Party()
 	pings := map[string][]string{}
 	for _, pl := range party {
 		if prof, ok := b.store.Profile(pl.UserID); ok && prof.SkipReminders {

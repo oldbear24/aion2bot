@@ -69,7 +69,6 @@ var en = map[string]string{
 	"roster.waiting":        "**⏳ Waiting for the leader (%d)**",
 	"roster.reserves":       "**🪑 Reserves (%d)**",
 	"roster.empty_open":     "*No one has joined yet — be the first!*",
-	"roster.empty":          "*No players joined through the bot.*",
 	"any.name":              "Any class",
 	"any.desc":              "Anyone is welcome",
 
@@ -83,6 +82,8 @@ var en = map[string]string{
 	"draft.looking_ph":    "Who do you need?",
 	"draft.missing":       "-# Missing players (not counting you)",
 	"draft.missing_ph":    "How many players are you missing?",
+	"draft.plays":         "-# You play — you're first in the party",
+	"draft.plays_ph":      "Your role and class",
 	"draft.gs_none":       "none *(optional)*",
 	"draft.gs_game":       " · *the game asks %s for this difficulty*",
 	"draft.summary":       "📈 **Min. gear score:** %s\n🕒 **Start:** %s\n📝 **Note:** %s",
@@ -305,7 +306,7 @@ var en = map[string]string{
 	// /help.
 	"help.title":  "## 📖 AION 2 party finder",
 	"help.find":   "### 🔎 Find a party\n• %s lists the open runs you can join with your class and gear score; pick one to join. %s DMs you when a new one comes up.\n• Or watch the LFG channel: posts from this server and the servers linked with it show up there.\n• Click **✋ Join**, pick your role and class, and enter your gear score and character name. You're added to the thread under the post.\n• Party already full? **🪑 Join as reserve**: if a player with your role leaves, you move up automatically.\n• Talk to the leader and the party in that thread: what you write there also shows in the thread on every linked server.\n• When the leader accepts you, you're pinged once in the thread, and reminded %s before a planned start. Message the leader for the in-game invite.\n• Changed your mind? Click **Leave** on the post.\n• %s saves your main role, class, character name and gear score, so the join form is filled in for you. You can turn the reminders off there.",
-	"help.post":   "### 📣 Post a run\n• %s opens a private panel: dungeon or raid, difficulty, who you need (%s, specific classes or Any class) and how many players are missing.\n• Optional: a minimum gear score, a start time and a note.\n• **Post** sends it to every linked server. You're pinged once, in the thread under the post, when the first player joins.\n• **⚙️ Manage** on the post: accept or decline players and reserves, change the gear score, start and note (✏️), adjust the missing count (−1/+1), **🔒 Close** or **🗑️ Delete** it.\n• The thread under the post is shared: you and everyone who joined are in it on every linked server you're on, and messages reach all of them.\n• You can have up to %d open runs. Runs stay open for %s and disappear 24 hours after they end.\n• %s shows how many runs were posted and filled, and the most popular dungeons.",
+	"help.post":   "### 📣 Post a run\n• %s opens a private panel: dungeon or raid, difficulty, who you need (%s, specific classes or Any class), how many players are missing and what you play.\n• Optional: a minimum gear score, a start time and a note.\n• **Post** sends it to every linked server. You're pinged once, in the thread under the post, when the first player joins.\n• **⚙️ Manage** on the post: accept or decline players and reserves, change the gear score, start and note (✏️), adjust the missing count (−1/+1), **🔒 Close** or **🗑️ Delete** it.\n• The thread under the post is shared: you and everyone who joined are in it on every linked server you're on, and messages reach all of them.\n• You can have up to %d open runs. Runs stay open for %s and disappear 24 hours after they end.\n• %s shows how many runs were posted and filled, and the most popular dungeons.",
 	"help.admin":  "### 🛠️ Server admins\n• %s picks the LFG channel, the role to ping and the language, and checks the bot's permissions.\n• %s checks permissions, the ping role and the server's links at any time.\n• %s starts a network and gives a join code; other servers use %s to link up and share posts. %s shows the linked servers.\n• %s stops posts arriving here; %s posts this guide for everyone.",
 	"help.footer": "-# %s shows this guide just to you.",
 

@@ -150,7 +150,7 @@ CREATE INDEX IF NOT EXISTS alerts_by_guild ON alerts (guild_id);`
 var postColumns = []string{
 	"id", "leader_id", "leader_name", "guild_id", "guild_name", "dungeon_id", "mode_id", "min_gs", "looking_for",
 	"missing", "start", "note", "status", "created_at", "expires_at", "closed_at", "revision", "pinged", "start_at",
-	"leader_char", "filled_at", "reminded",
+	"leader_char", "filled_at", "reminded", "leader_class", "leader_role", "leader_gs",
 }
 
 var (
@@ -206,6 +206,9 @@ var migrations = []string{
 	`ALTER TABLE players ADD COLUMN reserve INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE profiles ADD COLUMN char_name TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE profiles ADD COLUMN skip_reminders INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE posts ADD COLUMN leader_class TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE posts ADD COLUMN leader_role TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE posts ADD COLUMN leader_gs INTEGER NOT NULL DEFAULT 0`,
 }
 
 func migrate(db *sql.DB) error {
@@ -734,7 +737,7 @@ func loadPost(q querier, id string) (*Post, error) {
 	err := q.QueryRow(selectPost+" WHERE id = ?", id).Scan(
 		&p.ID, &p.LeaderID, &p.LeaderName, &p.GuildID, &p.GuildName, &p.DungeonID, &p.ModeID, &p.MinGS, &lookingFor,
 		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt,
-		&p.LeaderChar, &filled, &p.Reminded)
+		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -806,7 +809,8 @@ func writePost(tx *sql.Tx, p *Post) error {
 	_, err = tx.Exec(upsertPost,
 		p.ID, p.LeaderID, p.LeaderName, p.GuildID, p.GuildName, p.DungeonID, p.ModeID, p.MinGS, string(lookingFor),
 		p.Missing, p.Start, p.Note, p.Status, millis(p.CreatedAt), millis(p.ExpiresAt), millis(p.ClosedAt), p.Revision,
-		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded)
+		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded, p.LeaderClass, p.LeaderRole,
+		p.LeaderGS)
 	if err != nil {
 		return err
 	}

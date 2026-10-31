@@ -19,6 +19,8 @@ It uses Discord's new components:
    - **Dungeon or raid**, then **Difficulty**: only that dungeon's own modes, e.g. Exploration / Conquest / Conquest [Hard].
    - **Looking for**: roles (🟦 Tank, 🟩 Healer, 🟥 DPS), specific classes, *Any class*, or a mix.
    - **Missing players**: limited by the mode's party size.
+   - **You play**: the leader's role and class, filled in from `/profile`. The leader is listed first in the party on the post,
+     with their profile's character name and GS.
    - **Gear score, time & note** (all optional). The game's GS requirement for the mode is shown as a hint.
      The start is typed like `21.09.2026 10:15`, `21.9. 10:15` or just `10:15` (the next 10:15), in the leader's time zone.
      On the post it becomes a Discord timestamp, so every player sees it in their own local time with a countdown.

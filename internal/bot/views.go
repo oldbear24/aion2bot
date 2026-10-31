@@ -51,6 +51,7 @@ const (
 	fieldMode       = "mode"
 	fieldLookingFor = "lookingfor"
 	fieldMissing    = "missing"
+	fieldPlays      = "plays"
 	fieldDetails    = "details"
 	fieldPost       = "post"
 	fieldCancel     = "cancel"
@@ -183,20 +184,28 @@ func partyFill(d config.Dungeon, p lfg.Post) string {
 	return " (" + strconv.Itoa(max(1, size-p.Missing)) + "/" + strconv.Itoa(size) + ")"
 }
 
-// rosterText lists the party, the applicants and the reserves, each marked
-// with the colour of their role, as seen on viewerGuildID's copy of the
-// post. The leader's private panel passes leaderView to link every player.
-// Players who don't fit in rosterBudget are counted instead.
+// rosterText lists the party, led by the leader, then the applicants and
+// the reserves, each marked with the colour of their role, as seen on
+// viewerGuildID's copy of the post. The leader's private panel passes
+// leaderView to link every player. Players who don't fit in rosterBudget
+// are counted instead.
 func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i18n.Lang) string {
 	line := func(pl lfg.Player) string {
-		c := b.game.ClassOrUnknown(pl.ClassID)
 		s := b.roleBullet(b.shownRole(p, pl)) + " "
+		if pl.UserID == p.LeaderID {
+			s += "👑 "
+		}
 		if leaderView {
 			s += "**" + escape(pl.Name) + "** <@" + pl.UserID + ">"
 		} else {
 			s += who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID))
 		}
-		s += charSuffix(pl.Char) + " — " + strings.TrimSpace(c.Emoji+" "+c.Name)
+		s += charSuffix(pl.Char)
+		// Only a leader who didn't pick a class has none.
+		if pl.ClassID != "" {
+			c := b.game.ClassOrUnknown(pl.ClassID)
+			s += " — " + strings.TrimSpace(c.Emoji+" "+c.Name)
+		}
 		if pl.GS > 0 {
 			s += " · GS " + l.GS(pl.GS)
 		}
@@ -222,10 +231,9 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 		return sb.String()
 	}
 
+	party := p.Party()
 	var sb strings.Builder
-	if len(p.Accepted) > 0 {
-		sb.WriteString(l.T("roster.in_party", len(p.Accepted)) + list(p.Accepted) + "\n")
-	}
+	sb.WriteString(l.T("roster.in_party", len(party)) + list(party) + "\n")
 	if len(p.Applicants) > 0 {
 		sb.WriteString(l.T("roster.waiting", len(p.Applicants)) + list(p.Applicants) + "\n")
 	} else if p.Status == lfg.StatusOpen && len(p.Reserves) == 0 {
@@ -234,7 +242,7 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 	if len(p.Reserves) > 0 {
 		sb.WriteString(l.T("roster.reserves", len(p.Reserves)) + list(p.Reserves))
 	}
-	return orDefault(strings.TrimSpace(sb.String()), l.T("roster.empty"))
+	return strings.TrimSpace(sb.String())
 }
 
 // draftPanel is the private /lfg form. The difficulty menu only appears
@@ -257,6 +265,9 @@ func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
 		selectRow(draftID(fieldLookingFor), l.T("draft.looking_ph"), maxSelectValues, b.lookingForOptions(d.LookingFor, l)),
 		text(l.T("draft.missing")),
 		selectRow(draftID(fieldMissing), l.T("draft.missing_ph"), 1, missingOptions(b.draftMaxMissing(d), d.Missing, l)),
+		text(l.T("draft.plays")),
+		selectRow(draftID(fieldPlays), l.T("draft.plays_ph"), 1,
+			b.choiceOptions(b.game.Choices([]string{config.AnyID}), profileChoice(lfg.Profile{ClassID: d.Class, RoleID: d.Role}))),
 		divider(),
 	)
 
@@ -607,13 +618,13 @@ func (b *Bot) bringing(p lfg.Post, pl lfg.Player) string {
 
 // shownRole is the role a player shows as on p. A backup, like a Chanter
 // healing, shows as its main role while someone in the party fills the
-// role for real, like an accepted Cleric.
+// role for real, like the leader or an accepted Cleric.
 func (b *Bot) shownRole(p lfg.Post, pl lfg.Player) string {
 	instead, ok := b.game.Backup(pl.ClassID, pl.RoleID)
 	if !ok {
 		return pl.RoleID
 	}
-	for _, m := range p.Accepted {
+	for _, m := range p.Party() {
 		if _, backup := b.game.Backup(m.ClassID, m.RoleID); m.RoleID == pl.RoleID && !backup {
 			return instead
 		}

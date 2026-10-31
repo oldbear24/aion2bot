@@ -77,7 +77,6 @@ var cs = map[string]string{
 	"roster.waiting":        "**⏳ Čekají na vedoucího (%d)**",
 	"roster.reserves":       "**🪑 Náhradníci (%d)**",
 	"roster.empty_open":     "*Zatím se nikdo nepřidal — buď první!*",
-	"roster.empty":          "*Přes bota se nikdo nepřidal.*",
 	"any.name":              "Libovolné povolání",
 	"any.desc":              "Vítán je kdokoli",
 
@@ -91,6 +90,8 @@ var cs = map[string]string{
 	"draft.looking_ph":    "Koho potřebujete?",
 	"draft.missing":       "-# Chybějící hráči (bez tebe)",
 	"draft.missing_ph":    "Kolik hráčů vám chybí?",
+	"draft.plays":         "-# Hraješ za — v partě budeš první",
+	"draft.plays_ph":      "Tvoje role a povolání",
 	"draft.gs_none":       "žádné *(nepovinné)*",
 	"draft.gs_game":       " · *hra pro tuto obtížnost vyžaduje %s*",
 	"draft.summary":       "📈 **Min. GS:** %s\n🕒 **Začátek:** %s\n📝 **Poznámka:** %s",
@@ -313,7 +314,7 @@ var cs = map[string]string{
 	// /help.
 	"help.title":  "## 📖 AION 2 – hledání party",
 	"help.find":   "### 🔎 Najdi partu\n• %s ukáže otevřené nábory, do kterých se s tvým povoláním a GS dostaneš; vyber jeden a přidej se. %s ti napíše, až se objeví nový.\n• Nebo sleduj LFG kanál: objevují se tam nábory z tohoto serveru i z propojených serverů.\n• Klikni na **✋ Přidat se**, vyber roli a povolání a zadej své GS a jméno postavy. Bot tě přidá do vlákna pod náborem.\n• Parta už je plná? **🪑 Přidat se jako náhradník**: když odejde hráč s tvou rolí, automaticky se posuneš.\n• V tom vláknu se domluvíš s vedoucím a partou: co tam napíšeš, uvidí i vlákno na všech propojených serverech.\n• Až tě vedoucí přijme, dostaneš ve vláknu jednu zmínku a %s před plánovaným začátkem připomínku. Napiš vedoucímu o pozvánku ve hře.\n• Už nechceš? Klikni u náboru na **Odejít**.\n• %s uloží tvou hlavní roli, povolání, jméno postavy a GS, takže se ti formulář předvyplní. Vypneš tam i připomínky.",
-	"help.post":   "### 📣 Založ nábor\n• %s otevře soukromý panel: dungeon nebo raid, obtížnost, koho hledáte (%s, konkrétní povolání nebo Libovolné povolání) a kolik hráčů chybí.\n• Nepovinně: minimální GS, začátek a poznámka.\n• **Zveřejnit** pošle nábor na všechny propojené servery. Až se přidá první hráč, dostaneš jednu zmínku ve vláknu pod náborem.\n• **⚙️ Spravovat** u náboru: přijímej nebo odmítej hráče i náhradníky, měň GS, začátek a poznámku (✏️), uprav počet chybějících (−1/+1), **🔒 Uzavři** nebo **🗑️ Smaž** nábor.\n• Vlákno pod náborem je sdílené: ty i všichni přihlášení v něm jste na každém propojeném serveru, kde jste členy, a zprávy se dostanou všude.\n• Otevřených náborů můžeš mít až %d. Nábory platí %s a 24 hodin po skončení zmizí.\n• %s ukáže, kolik náborů vzniklo a naplnilo se a které dungeony jsou nejoblíbenější.",
+	"help.post":   "### 📣 Založ nábor\n• %s otevře soukromý panel: dungeon nebo raid, obtížnost, koho hledáte (%s, konkrétní povolání nebo Libovolné povolání), kolik hráčů chybí a za co hraješ.\n• Nepovinně: minimální GS, začátek a poznámka.\n• **Zveřejnit** pošle nábor na všechny propojené servery. Až se přidá první hráč, dostaneš jednu zmínku ve vláknu pod náborem.\n• **⚙️ Spravovat** u náboru: přijímej nebo odmítej hráče i náhradníky, měň GS, začátek a poznámku (✏️), uprav počet chybějících (−1/+1), **🔒 Uzavři** nebo **🗑️ Smaž** nábor.\n• Vlákno pod náborem je sdílené: ty i všichni přihlášení v něm jste na každém propojeném serveru, kde jste členy, a zprávy se dostanou všude.\n• Otevřených náborů můžeš mít až %d. Nábory platí %s a 24 hodin po skončení zmizí.\n• %s ukáže, kolik náborů vzniklo a naplnilo se a které dungeony jsou nejoblíbenější.",
 	"help.admin":  "### 🛠️ Pro správce serveru\n• %s nastaví LFG kanál, roli k označení a jazyk a zkontroluje oprávnění bota.\n• %s kdykoli zkontroluje oprávnění, roli k označení a propojení serveru.\n• %s založí síť a dá kód pro připojení; ostatní servery se připojí přes %s a sdílí nábory. %s ukáže propojené servery.\n• %s vypne příjem náborů tady; %s zveřejní tento návod pro všechny.",
 	"help.footer": "-# %s ukáže tento návod jen tobě.",
 
