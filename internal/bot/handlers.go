@@ -132,6 +132,7 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	// The leader is pinged for the first player only, in the language of
 	// their server; the card shows the rest.
 	if pingLeader {
+		b.learnMembers(p, []string{p.GuildID})
 		ll := b.guildLang(p.GuildID)
 		msg := ll.T("ping.leader", p.LeaderID, b.applicantText(pl, p.GuildID, ll), dungeon.Name)
 		if !b.announce(p, p.GuildID, []string{p.LeaderID}, msg) {
@@ -144,7 +145,7 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 
 // applicantText describes a player as seen on one server's copy of a post.
 func (b *Bot) applicantText(pl lfg.Player, viewerGuildID string, l i18n.Lang) string {
-	s := who(pl.UserID, pl.Name, pl.GuildID, viewerGuildID) + " (" + b.bringing(pl)
+	s := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID)) + " (" + b.bringing(pl)
 	if pl.GS > 0 {
 		s += " · GS " + l.GS(pl.GS)
 	}
@@ -196,11 +197,17 @@ func (b *Bot) onAccept(i *discordgo.Interaction, p lfg.Post, userIDs []string) e
 	if m, ok := dungeon.Mode(p.ModeID); ok {
 		where += " (" + m.Name + ")"
 	}
+	var freshGuilds []string
+	for _, pl := range fresh {
+		freshGuilds = append(freshGuilds, pl.GuildID)
+	}
+	b.learnMembers(p, freshGuilds)
 	for _, pl := range fresh {
 		// Each player hears it in the language of the server they joined from.
 		pll := b.guildLang(pl.GuildID)
 		start := startText(p.StartAt, p.Start, pll)
-		msg := pll.T("ping.accepted", pl.UserID, who(p.LeaderID, p.LeaderName, p.GuildID, pl.GuildID), where, b.bringing(pl), start)
+		leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, pl.GuildID))
+		msg := pll.T("ping.accepted", pl.UserID, leader, where, b.bringing(pl), start)
 		if !b.announce(p, pl.GuildID, []string{pl.UserID}, msg) {
 			b.dm(pl.UserID, notice(colorFull,
 				pll.T("dm.accepted", escape(p.LeaderName), p.LeaderID, where, b.bringing(pl), start)))

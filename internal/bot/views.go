@@ -100,7 +100,7 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	}
 	header += "\n" + status
 
-	info := l.T("card.leader") + who(p.LeaderID, p.LeaderName, p.GuildID, guildID)
+	info := l.T("card.leader") + who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
 	if p.GuildName != "" && p.GuildID != guildID {
 		info += " · *" + escape(truncate(p.GuildName, 40)) + "*"
 	}
@@ -155,11 +155,11 @@ func difficultyLine(d config.Dungeon, modeID string, minGS int, l i18n.Lang) str
 	return strings.Join(parts, " · ")
 }
 
-// who links a user with a mention on their own server's copy of a post,
-// where Discord can resolve it. Elsewhere the mention would show as
-// "@unknown-user", so the plain name is used.
-func who(userID, name, homeGuildID, viewerGuildID string) string {
-	if homeGuildID != "" && homeGuildID == viewerGuildID {
+// who links a user with a mention where Discord can resolve it, on a
+// server they're a member of (see Bot.mentionable). Elsewhere the mention
+// would show as "@unknown-user", so the plain name is used.
+func who(userID, name string, mention bool) string {
+	if mention {
 		return "<@" + userID + ">"
 	}
 	return "**" + escape(name) + "**"
@@ -185,7 +185,7 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 		if leaderView {
 			s += "**" + escape(pl.Name) + "** <@" + pl.UserID + ">"
 		} else {
-			s += who(pl.UserID, pl.Name, pl.GuildID, viewerGuildID)
+			s += who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID))
 		}
 		s += " — " + strings.TrimSpace(c.Emoji+" "+c.Name)
 		if pl.GS > 0 {

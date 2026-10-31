@@ -30,7 +30,8 @@ It uses Discord's new components:
    It also sets the player's time zone for typed start times. Until they pick one, it's guessed from their Discord language (Czech → Prague time).
 5. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players, adjust the missing count when someone joins
    outside the bot, **Close** the post, or **Delete** it from every server right away.
-6. **Pings.** On each server's copy, players from that server are linked with @mentions (others show by name, since Discord can't resolve them there).
+6. **Pings.** The leader and the players are linked with @mentions on every linked server they're a member of, so they're easy to find and message.
+   Where they aren't a member, they show by name, since Discord can't resolve the mention there.
    Everyone is pinged **once** per run, in a thread the bot starts under the post: the leader when the first player joins, each player when they're accepted.
    The channel itself only holds the posts. A server's thread is started with its first ping, so posts nobody joins don't get one.
    After that, changes only edit the card, which never notifies anyone. If a server has no copy of the post, or the bot can't use threads there, a DM is sent instead.

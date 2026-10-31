@@ -38,6 +38,9 @@ type Bot struct {
 	draftMu sync.Mutex
 	drafts  map[string]*draft
 
+	// members tells where the people on posts can be linked with mentions.
+	members memberCache
+
 	// commandIDs lets messages show clickable command mentions.
 	cmdMu      sync.RWMutex
 	commandIDs map[string]string
@@ -114,6 +117,10 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 		}
 	}()
 	i := ic.Interaction
+	// Whoever uses the bot on a server is a member of it.
+	if i.GuildID != "" && i.Member != nil && i.Member.User != nil {
+		b.members.set(i.GuildID, i.Member.User.ID, true, time.Now())
+	}
 
 	var err error
 	switch i.Type {
@@ -200,6 +207,7 @@ func (b *Bot) maintenance() {
 		}
 		b.deleteEnded(now.Add(-keepEndedPosts))
 		b.dropStaleDrafts(now)
+		b.members.dropStale(now)
 
 		select {
 		case <-b.stop:

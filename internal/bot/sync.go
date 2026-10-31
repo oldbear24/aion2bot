@@ -64,6 +64,11 @@ func (b *Bot) syncPost(postID string) {
 	for _, g := range b.store.Guilds() {
 		langs[g.GuildID] = i18n.Parse(g.Lang)
 	}
+	var guildIDs []string
+	for _, ref := range p.Messages {
+		guildIDs = append(guildIDs, ref.GuildID)
+	}
+	b.learnMembers(p, guildIDs)
 	forEach(p.Messages, func(ref lfg.MessageRef) {
 		l, ok := langs[ref.GuildID]
 		if !ok {
@@ -83,12 +88,19 @@ func (b *Bot) syncPost(postID string) {
 // returns how many copies were delivered and how many failed. ping is set
 // for brand-new posts; copies sent later by /lfg-setup stay quiet.
 func (b *Bot) broadcast(p lfg.Post, guilds []lfg.GuildConfig, ping bool) (sent, failed int) {
+	var fresh []lfg.GuildConfig
+	var guildIDs []string
+	for _, g := range guilds {
+		if !p.InGuild(g.GuildID) {
+			fresh = append(fresh, g)
+			guildIDs = append(guildIDs, g.GuildID)
+		}
+	}
+	b.learnMembers(p, guildIDs)
+
 	var mu sync.Mutex
 	var refs []lfg.MessageRef
-	forEach(guilds, func(g lfg.GuildConfig) {
-		if p.InGuild(g.GuildID) {
-			return
-		}
+	forEach(fresh, func(g lfg.GuildConfig) {
 		ref, err := b.deliver(p, g, ping)
 		mu.Lock()
 		defer mu.Unlock()

@@ -246,7 +246,7 @@ func TestJoinFormStartsFromProfile(t *testing.T) {
 	}
 }
 
-func TestCardLinksUsersOnTheirOwnServer(t *testing.T) {
+func TestCardLinksUsersWhereTheyAreMembers(t *testing.T) {
 	b := testBot(t)
 	p := lfg.Post{
 		ID: "abc123", LeaderID: "L", LeaderName: "Lea", GuildID: "g1", GuildName: "One",
@@ -291,6 +291,38 @@ func TestCardLinksUsersOnTheirOwnServer(t *testing.T) {
 	}
 	if strings.Contains(away, `<@L>`) || strings.Contains(home, `<@B>`) {
 		t.Error("users are mentioned on a server they aren't from")
+	}
+
+	// Once the bot knows the leader is also on server two and Bob isn't on
+	// server one, the leader is linked there too, the same as a player.
+	now := time.Now()
+	b.members.set("g2", "L", true, now)
+	b.members.set("g1", "B", false, now)
+	home, away = render("g1"), render("g2")
+	if !strings.Contains(away, `<@L>`) || strings.Contains(away, `**Lea**`) {
+		t.Errorf("leader who is a member of server two should be mentioned there:\n%s", away)
+	}
+	if !strings.Contains(home, `**Bob**`) || strings.Contains(home, `<@B>`) {
+		t.Errorf("Bob isn't on server one:\n%s", home)
+	}
+}
+
+func TestMemberCacheExpires(t *testing.T) {
+	var c memberCache
+	now := time.Now()
+	if _, known := c.get("g", "u", now); known {
+		t.Fatal("empty cache knows a member")
+	}
+	c.set("g", "u", true, now)
+	if member, known := c.get("g", "u", now.Add(memberTTL/2)); !member || !known {
+		t.Fatal("fresh entry lost")
+	}
+	if _, known := c.get("g", "u", now.Add(memberTTL+time.Minute)); known {
+		t.Fatal("stale entry still trusted")
+	}
+	c.dropStale(now.Add(memberTTL + time.Minute))
+	if len(c.entries) != 0 {
+		t.Fatalf("stale entries kept: %v", c.entries)
 	}
 }
 
