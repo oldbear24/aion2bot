@@ -132,7 +132,9 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
     { "id": "tank", "name": "Tank", "emoji": "🟦" }
   ],
   "classes": [                // "Any class" is added automatically
-    { "id": "gladiator", "name": "Gladiator", "emoji": "⚔️", "roles": ["tank", "dps"] }
+    { "id": "gladiator", "name": "Gladiator", "emoji": "⚔️", "roles": ["tank", "dps"] },
+    { "id": "chanter", "name": "Chanter", "emoji": "🎶", "roles": ["healer", "dps"],
+      "backup_roles": ["healer"] }    // heals only while no other class heals in the party
   ]
 }
 ```
@@ -145,6 +147,8 @@ The list covers what is live on the **global** version as of 31 October 2026:
 
 Content only in the client files (Chalice of Muspel, Corroded Decontamination Facility, other hard modes) is left out; add it when it opens on global.
 Class roles: Templar tanks, Gladiator tanks or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.
+A Chanter who joins as a healer shows as DPS once a Cleric is accepted into the party, since the Cleric does the healing then; it shows as a healer again if the Cleric leaves.
+A Cleric who has only applied doesn't count. Generally, a class's `backup_roles` show as its first other role while an accepted player of another class fills them.
 Emojis can be Unicode or custom (`"<:krao:123456789012345678>"`). Keep `id`s stable: open posts refer to them.
 
 Roles and classes show as icons: `internal/emoji/images/<id>.png` (128×128) is built into the bot, uploaded as an application emoji at startup

@@ -552,6 +552,36 @@ func TestJoinChoicesFollowRoles(t *testing.T) {
 	}
 }
 
+func TestChanterHealsWithoutCleric(t *testing.T) {
+	b := testBot(t)
+	chanter := lfg.Player{UserID: "c", ClassID: "chanter", RoleID: "healer"}
+	chanter2 := lfg.Player{UserID: "c2", ClassID: "chanter", RoleID: "healer"}
+	cleric := lfg.Player{UserID: "h", ClassID: "cleric", RoleID: "healer"}
+	p := lfg.Post{Accepted: []lfg.Player{chanter, chanter2}, Applicants: []lfg.Player{cleric}}
+
+	// A Cleric who only applied doesn't count, nor does another Chanter.
+	if got := b.shownRole(p, chanter); got != "healer" {
+		t.Errorf("chanter without a cleric in the party shows as %q", got)
+	}
+
+	p.Accepted, p.Applicants = []lfg.Player{chanter, cleric}, []lfg.Player{chanter2}
+	for _, pl := range []lfg.Player{chanter, chanter2} {
+		if got := b.shownRole(p, pl); got != "dps" {
+			t.Errorf("chanter %s next to a cleric shows as %q", pl.UserID, got)
+		}
+	}
+	if got := b.shownRole(p, cleric); got != "healer" {
+		t.Errorf("cleric shows as %q", got)
+	}
+	if got, want := b.bringing(p, chanter), b.choiceText("chanter", "dps"); got != want {
+		t.Errorf("bringing %q, want %q", got, want)
+	}
+	roster := b.rosterText(p, "", true, i18n.English)
+	if strings.Count(roster, b.roleBullet("healer")+" **") != 1 || strings.Count(roster, b.roleBullet("dps")+" **") != 2 {
+		t.Errorf("roster marks the chanters as DPS and the cleric as healer:\n%s", roster)
+	}
+}
+
 func TestCustomIDRoundTrip(t *testing.T) {
 	action, postID, ok := parseCustomID(customID(actAccept, "abc123"))
 	if !ok || action != actAccept || postID != "abc123" {

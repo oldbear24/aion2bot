@@ -183,7 +183,7 @@ func partyFill(d config.Dungeon, p lfg.Post) string {
 func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i18n.Lang) string {
 	line := func(pl lfg.Player) string {
 		c := b.game.ClassOrUnknown(pl.ClassID)
-		s := b.roleBullet(pl.RoleID) + " "
+		s := b.roleBullet(b.shownRole(p, pl)) + " "
 		if leaderView {
 			s += "**" + escape(pl.Name) + "** <@" + pl.UserID + ">"
 		} else {
@@ -392,11 +392,11 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 
 	if len(p.Applicants) > 0 && p.Missing > 0 {
 		comps = append(comps, selectRow(customID(actAccept, p.ID), l.T("manage.accept_ph"),
-			min(len(p.Applicants), p.Missing), b.playerOptions(p.Applicants, l)))
+			min(len(p.Applicants), p.Missing), b.playerOptions(p, p.Applicants, l)))
 	}
 	if all := slices.Concat(p.Accepted, p.Applicants); len(all) > 0 {
 		comps = append(comps, selectRow(customID(actKick, p.ID), l.T("manage.kick_ph"),
-			len(all), b.playerOptions(all, l)))
+			len(all), b.playerOptions(p, all, l)))
 	}
 	comps = append(comps,
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
@@ -580,17 +580,35 @@ func (b *Bot) roleBullet(roleID string) string {
 	return "•"
 }
 
-// bringing is how a player joins: "🟦 Tank · ⚔️ Gladiator".
-func (b *Bot) bringing(pl lfg.Player) string { return b.choiceText(pl.ClassID, pl.RoleID) }
+// bringing is how a player is in p: "🟦 Tank · ⚔️ Gladiator".
+func (b *Bot) bringing(p lfg.Post, pl lfg.Player) string {
+	return b.choiceText(pl.ClassID, b.shownRole(p, pl))
+}
 
-func (b *Bot) playerOptions(players []lfg.Player, l i18n.Lang) []discordgo.SelectMenuOption {
+// shownRole is the role a player shows as on p. A backup, like a Chanter
+// healing, shows as its main role while someone in the party fills the
+// role for real, like an accepted Cleric.
+func (b *Bot) shownRole(p lfg.Post, pl lfg.Player) string {
+	instead, ok := b.game.Backup(pl.ClassID, pl.RoleID)
+	if !ok {
+		return pl.RoleID
+	}
+	for _, m := range p.Accepted {
+		if _, backup := b.game.Backup(m.ClassID, m.RoleID); m.RoleID == pl.RoleID && !backup {
+			return instead
+		}
+	}
+	return pl.RoleID
+}
+
+func (b *Bot) playerOptions(p lfg.Post, players []lfg.Player, l i18n.Lang) []discordgo.SelectMenuOption {
 	players = players[:min(len(players), maxSelectValues)]
 	opts := make([]discordgo.SelectMenuOption, 0, len(players))
 	for _, pl := range players {
 		c := b.game.ClassOrUnknown(pl.ClassID)
 		desc := c.Name
 		icon := c.Emoji
-		if r, ok := b.game.Role(pl.RoleID); ok {
+		if r, ok := b.game.Role(b.shownRole(p, pl)); ok {
 			desc = r.Name + " · " + desc
 			icon = orDefault(r.Emoji, icon)
 		}

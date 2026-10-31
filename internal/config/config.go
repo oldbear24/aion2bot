@@ -56,6 +56,20 @@ type Class struct {
 	Emoji string `json:"emoji,omitempty"`
 	// Roles lists the IDs of the roles this class can fill.
 	Roles []string `json:"roles,omitempty"`
+	// BackupRoles are roles from Roles the class fills only while nobody
+	// else in the party does, like a Chanter healing without a Cleric.
+	// Otherwise it shows as its first other role.
+	BackupRoles []string `json:"backup_roles,omitempty"`
+}
+
+// mainRole is the first role the class fills for real, not as a backup.
+func (c Class) mainRole() string {
+	for _, r := range c.Roles {
+		if !slices.Contains(c.BackupRoles, r) {
+			return r
+		}
+	}
+	return ""
 }
 
 type Game struct {
@@ -146,6 +160,14 @@ func (g *Game) validate() error {
 			if _, ok := g.Role(r); !ok {
 				return fmt.Errorf("class %q: unknown role %q", c.ID, r)
 			}
+		}
+		for _, r := range c.BackupRoles {
+			if !slices.Contains(c.Roles, r) {
+				return fmt.Errorf("class %q: backup role %q isn't one of its roles", c.ID, r)
+			}
+		}
+		if len(c.BackupRoles) > 0 && c.mainRole() == "" {
+			return fmt.Errorf("class %q: needs a role besides its backup roles", c.ID)
 		}
 		choices += max(1, len(c.Roles))
 	}
@@ -245,6 +267,17 @@ func (g *Game) UseIcons(icons map[string]string) {
 			g.Classes[i].Emoji = e
 		}
 	}
+}
+
+// Backup reports whether a player bringing classID as roleID only stands
+// in for that role, and the role they show as instead once someone else
+// in the party fills it.
+func (g *Game) Backup(classID, roleID string) (instead string, ok bool) {
+	c, found := g.Class(classID)
+	if !found || !slices.Contains(c.BackupRoles, roleID) {
+		return "", false
+	}
+	return c.mainRole(), true
 }
 
 func (g *Game) ClassOrUnknown(id string) Class {

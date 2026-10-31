@@ -79,6 +79,6 @@
     { "id": "sorcerer", "name": "Sorcerer", "emoji": "🔥", "roles": ["dps"] },
     { "id": "spiritmaster", "name": "Spiritmaster", "emoji": "🌀", "roles": ["dps"] },
     { "id": "cleric", "name": "Cleric", "emoji": "✨", "roles": ["healer"] },
-    { "id": "chanter", "name": "Chanter", "emoji": "🎶", "roles": ["healer", "dps"] }
+    { "id": "chanter", "name": "Chanter", "emoji": "🎶", "roles": ["healer", "dps"], "backup_roles": ["healer"] }
   ]
 }

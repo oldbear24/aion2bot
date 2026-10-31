@@ -132,7 +132,7 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	b.rememberJoin(pl)
 
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
-	err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(pl), escape(p.LeaderName))))
+	err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))))
 
 	// The leader is pinged for the first player only, on their own server;
 	// the note shows in the thread on every server, and the card shows the
@@ -141,12 +141,12 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	if pingLeader {
 		note := func(guildID string, l i18n.Lang) string {
 			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
-			return l.T("ping.leader", leader, b.applicantText(pl, guildID, l), dungeon.Name)
+			return l.T("ping.leader", leader, b.applicantText(p, pl, guildID, l), dungeon.Name)
 		}
 		if !b.announce(p, p.GuildID, []string{p.LeaderID}, true, note) {
 			ll := b.guildLang(p.GuildID)
 			b.dm(p.LeaderID, container(colorOpen,
-				text(ll.T("dm.leader", dungeon.Name, b.playerLine(pl, ll))), manageRow(p.ID, ll)))
+				text(ll.T("dm.leader", dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
 		}
 	}
 	if p, ok := b.store.Post(p.ID); ok {
@@ -156,8 +156,8 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 }
 
 // applicantText describes a player as seen on one server's copy of a post.
-func (b *Bot) applicantText(pl lfg.Player, viewerGuildID string, l i18n.Lang) string {
-	s := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID)) + " (" + b.bringing(pl)
+func (b *Bot) applicantText(p lfg.Post, pl lfg.Player, viewerGuildID string, l i18n.Lang) string {
+	s := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID)) + " (" + b.bringing(p, pl)
 	if pl.GS > 0 {
 		s += " · GS " + l.GS(pl.GS)
 	}
@@ -219,11 +219,11 @@ func (b *Bot) onAccept(i *discordgo.Interaction, p lfg.Post, userIDs []string) e
 		note := func(guildID string, l i18n.Lang) string {
 			player := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, guildID))
 			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
-			return l.T("ping.accepted", player, leader, where, b.bringing(pl), startText(p.StartAt, p.Start, l))
+			return l.T("ping.accepted", player, leader, where, b.bringing(p, pl), startText(p.StartAt, p.Start, l))
 		}
 		if !b.announce(p, pl.GuildID, []string{pl.UserID}, true, note) {
 			pll := b.guildLang(pl.GuildID)
-			b.dm(pl.UserID, notice(colorFull, pll.T("dm.accepted", escape(p.LeaderName), p.LeaderID, where, b.bringing(pl),
+			b.dm(pl.UserID, notice(colorFull, pll.T("dm.accepted", escape(p.LeaderName), p.LeaderID, where, b.bringing(p, pl),
 				startText(p.StartAt, p.Start, pll))))
 		}
 	}
@@ -458,8 +458,8 @@ func manageRow(postID string, l i18n.Lang) discordgo.ActionsRow {
 
 // playerLine is a player as the leader sees them: name, mention, role,
 // class and home server.
-func (b *Bot) playerLine(pl lfg.Player, l i18n.Lang) string {
-	s := l.T("player.as", escape(pl.Name), pl.UserID, b.bringing(pl))
+func (b *Bot) playerLine(p lfg.Post, pl lfg.Player, l i18n.Lang) string {
+	s := l.T("player.as", escape(pl.Name), pl.UserID, b.bringing(p, pl))
 	if pl.GS > 0 {
 		s += " (GS " + l.GS(pl.GS) + ")"
 	}
