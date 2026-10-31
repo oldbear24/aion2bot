@@ -83,6 +83,8 @@ type Game struct {
 	Dungeons        []Dungeon `json:"dungeons"`
 	Roles           []Role    `json:"roles"`
 	Classes         []Class   `json:"classes"`
+	// LeaderEmoji marks the leader of a party.
+	LeaderEmoji string `json:"-"`
 }
 
 // Choice is one way a player can join: a class, and the role they fill
@@ -114,6 +116,7 @@ func LoadGame(path string) (*Game, error) {
 		g.ReminderMinutes = 15
 	}
 	g.MaxMissing = min(g.MaxMissing, maxSelectOptions)
+	g.LeaderEmoji = "👑"
 	if err := g.validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -263,8 +266,12 @@ func (g *Game) Class(id string) (Class, bool) {
 }
 
 // UseIcons replaces the emoji of each role and class that has an icon,
-// keyed by its id. The emoji from game.json stays for the others.
+// keyed by its id, and the leader's crown with the "leader" icon. The
+// emoji from game.json stays for the others.
 func (g *Game) UseIcons(icons map[string]string) {
+	if e, ok := icons["leader"]; ok {
+		g.LeaderEmoji = e
+	}
 	for i, r := range g.Roles {
 		if e, ok := icons[r.ID]; ok {
 			g.Roles[i].Emoji = e

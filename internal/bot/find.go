@@ -124,7 +124,7 @@ func (b *Bot) findPanel(found []lfg.Post, guildID string, prof lfg.Profile, l i1
 		if p.Status == lfg.StatusFull {
 			status = l.T("card.full") + partyFill(dungeon, p) + l.T("card.reserves_welcome")
 		}
-		entry += "\n" + status + "\n🕒 " + startText(p.StartAt, p.Start, l) + " · 👑 " + escape(truncate(p.LeaderName, 32))
+		entry += "\n" + status + "\n🕒 " + startText(p.StartAt, p.Start, l) + " · " + b.game.LeaderEmoji + " " + escape(truncate(p.LeaderName, 32))
 		if ref, ok := b.findCopy(p, guildID); ok {
 			entry += " · [" + l.T("find.open") + "](" + messageLink(ref) + ")"
 		}

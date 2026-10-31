@@ -49,6 +49,7 @@ func commandList(game *config.Game) []*discordgo.ApplicationCommand {
 		),
 		command("profile", "cmd.profile", nil, guildAndDM),
 		command("help", "cmd.help", nil, guildAndDM),
+		command("legend", "cmd.legend", nil, guildAndDM),
 		// Limited to moderators by default so the channel isn't spammed;
 		// admins can open it up under Server Settings → Integrations.
 		command("help-public", "cmd.help_public", &manageMessages, guildOnly),

@@ -119,6 +119,10 @@ func (b *Bot) Start() error {
 		b.s.Close()
 		return err
 	}
+	// Bring the open posts up to date with this version's layout.
+	for _, p := range b.store.ActivePosts() {
+		b.scheduleSync(p.ID)
+	}
 	go b.maintenance()
 	return nil
 }
@@ -190,6 +194,8 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 			err = b.cmdHelp(i, false)
 		case "help-public":
 			err = b.cmdHelp(i, true)
+		case "legend":
+			err = b.cmdLegend(i)
 		}
 	case discordgo.InteractionApplicationCommandAutocomplete:
 		if i.ApplicationCommandData().Name == "lfg-network" {

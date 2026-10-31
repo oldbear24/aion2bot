@@ -50,7 +50,7 @@ func (b *Bot) helpPanel(l i18n.Lang, admin bool) discordgo.MessageComponent {
 			text(l.T("help.admin", b.cmd("lfg-setup"), b.cmd("lfg-check"), b.cmd("lfg-network create"),
 				b.cmd("lfg-network join"), b.cmd("lfg-network info"), b.cmd("lfg-disable"), b.cmd("help-public"))))
 	}
-	parts = append(parts, text(l.T("help.footer", b.cmd("help"))))
+	parts = append(parts, text(l.T("help.footer", b.cmd("help"), b.cmd("legend"))))
 	return container(colorFull, parts...)
 }
 
@@ -65,4 +65,48 @@ func (b *Bot) cmd(name string) string {
 		return "`/" + name + "`"
 	}
 	return "</" + name + ":" + id + ">"
+}
+
+// /legend explains the icons on posts, privately in the user's language.
+func (b *Bot) cmdLegend(i *discordgo.Interaction) error { return b.reply(i, b.legendPanel(lang(i))) }
+
+// legendPanel lists the roles, every class with the roles it fills, and
+// the other marks a post uses.
+func (b *Bot) legendPanel(l i18n.Lang) discordgo.MessageComponent {
+	role := func(id string) string {
+		r, _ := b.game.Role(id)
+		return strings.TrimSpace(r.Emoji + " " + r.Name)
+	}
+	roles := make([]string, 0, len(b.game.Roles)+1)
+	for _, r := range b.game.Roles {
+		roles = append(roles, role(r.ID))
+	}
+	roles = append(roles, anyEmoji+" "+l.T("any.name"))
+
+	var classes strings.Builder
+	for _, c := range b.game.Classes {
+		classes.WriteString("\n" + strings.TrimSpace(c.Emoji+" **"+c.Name+"**"))
+		fills := make([]string, 0, len(c.Roles))
+		for _, id := range c.Roles {
+			fills = append(fills, role(id))
+		}
+		if len(fills) > 0 {
+			classes.WriteString(" — " + strings.Join(fills, " · "))
+		}
+	}
+	for _, c := range b.game.Classes {
+		for _, id := range c.BackupRoles {
+			if instead, ok := b.game.Backup(c.ID, id); ok {
+				classes.WriteString(l.T("legend.backup", c.Name, role(id), role(instead)))
+			}
+		}
+	}
+
+	return container(colorFull,
+		text(l.T("legend.title")),
+		text(l.T("legend.roles")+strings.Join(roles, " · ")),
+		text(l.T("legend.classes")+classes.String()),
+		divider(),
+		text(l.T("legend.post", b.game.LeaderEmoji)),
+	)
 }

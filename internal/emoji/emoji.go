@@ -1,5 +1,6 @@
 // Package emoji uploads the role and class icons bundled with the bot as
-// application emojis, which the bot can show on every server.
+// application emojis, which the bot can show on every server, along with
+// the crown that marks a party's leader.
 package emoji
 
 import (
@@ -16,7 +17,7 @@ import (
 )
 
 // images holds one 128×128 PNG per role or class, named after its id in
-// game.json, e.g. tank.png or gladiator.png.
+// game.json, e.g. tank.png or gladiator.png, and leader.png.
 //
 //go:embed images/*.png
 var images embed.FS

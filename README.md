@@ -115,6 +115,7 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | `/lfg-stats [days]` | everyone | Shows runs posted and filled, the most popular dungeons and the busiest servers of the network |
 | `/profile` | everyone | Saves your main role, class, character name, gear score, time zone and whether you want reminders |
 | `/help` | everyone | Shows how to use the bot, only to you (members with Manage Server also see the admin commands) |
+| `/legend` | everyone | Explains the icons on posts: roles, every class and the roles it fills, the leader's crown and the party lists, only to you |
 | `/help-public` | Manage Messages | Posts the player guide (without the admin commands) in the channel for everyone (permission adjustable in Server Settings → Integrations) |
 | `/lfg-setup channel [ping_role] [language]` | Manage Server | Sets this server's LFG channel, ping role and post language, with a permission checklist |
 | `/lfg-check [channel]` | Manage Server | Checks the bot's permissions, the ping role and the network |
@@ -170,6 +171,7 @@ Emojis can be Unicode or custom (`"<:krao:123456789012345678>"`). Keep `id`s sta
 
 Roles and classes show as icons: `internal/emoji/images/<id>.png` (128×128) is built into the bot, uploaded as an application emoji at startup
 and used instead of the `emoji` in `game.json`, which stays as the fallback (for an id without an icon, or if the upload fails).
+`leader.png` is the party leader's crown, with 👑 as its fallback.
 A changed image is uploaded again on the next start and the old emoji deleted.
 
 ## Data
@@ -186,7 +188,7 @@ game.json           dungeons, modes, roles and classes
 Dockerfile          the release image; compose.yaml runs it
 .github/workflows   CI (tests, image build) and releases
 internal/config     game.json and .env loading, role/class matching
-internal/emoji      role and class icons, uploaded as application emojis
+internal/emoji      role, class and leader icons, uploaded as application emojis
 internal/lfg        post rules and reserves, SQLite storage, networks, profiles, alerts, run history
 internal/bot        commands, panels, forms, cross-server sync, shared threads, reminders, alerts, search, stats, cleanup
 ```

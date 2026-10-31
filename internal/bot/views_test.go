@@ -42,6 +42,7 @@ func iconBot(t *testing.T) *Bot {
 	for _, c := range b.game.Classes {
 		icons[c.ID] = "<:" + c.ID + ":1234567890123456789>"
 	}
+	icons["leader"] = "<:leader:1234567890123456789>"
 	b.game.UseIcons(icons)
 	return b
 }
@@ -232,6 +233,7 @@ func TestOtherPanelsFitDiscordLimits(t *testing.T) {
 			"too many runs":  b.tooManyRuns(open, l),
 			"help":           b.helpPanel(l, false),
 			"admin help":     b.helpPanel(l, true),
+			"legend":         iconBot(t).legendPanel(l),
 		} {
 			if count, textLen := measure(t, panel); count > maxComponents || textLen > maxTextLength {
 				t.Errorf("%s %s: %d components, %d characters", l, name, count, textLen)
@@ -610,12 +612,20 @@ func TestLeaderIsInTheParty(t *testing.T) {
 
 	// A leader who didn't pick a class still leads the party, without one.
 	roster := b.rosterText(p, "", true, i18n.English)
-	if !strings.HasPrefix(roster, "**✅ In the party (2)**\n• 👑 **Lea** <@L>\n") {
+	if !strings.HasPrefix(roster, "**✅ In the party (2)**\n👑 **Lea** <@L>\n") {
 		t.Errorf("the leader must come first in the party:\n%s", roster)
 	}
 	if strings.Contains(roster, "❔") {
 		t.Errorf("a leader without a class shows an unknown one:\n%s", roster)
 	}
+	if empty := i18n.English.T("roster.empty_open"); strings.Contains(roster, empty) {
+		t.Errorf("a party with a player in it says %q:\n%s", empty, roster)
+	}
+	p.Accepted = nil
+	if empty := i18n.English.T("roster.empty_open"); !strings.HasSuffix(b.rosterText(p, "", true, i18n.English), empty) {
+		t.Errorf("a party of just the leader should say %q", empty)
+	}
+	p.Accepted = []lfg.Player{chanter}
 
 	// A Cleric leading the party heals, so the Chanter shows as DPS.
 	p.LeaderClass, p.LeaderRole, p.LeaderGS = "cleric", "healer", 3100
@@ -626,6 +636,48 @@ func TestLeaderIsInTheParty(t *testing.T) {
 	want := b.roleBullet("healer") + " 👑 **Lea** <@L> — " + b.game.ClassOrUnknown("cleric").Emoji + " Cleric · GS 3,100"
 	if !strings.Contains(roster, want) {
 		t.Errorf("roster misses %q:\n%s", want, roster)
+	}
+
+	// With the bundled icons, the leader wears the custom crown.
+	b = iconBot(t)
+	roster = b.rosterText(p, "", true, i18n.English)
+	if want := " <:leader:1234567890123456789> **Lea**"; !strings.Contains(roster, want) || strings.Contains(roster, "👑") {
+		t.Errorf("roster misses %q:\n%s", want, roster)
+	}
+}
+
+func TestLegendExplainsEveryIcon(t *testing.T) {
+	b := iconBot(t)
+	texts := func(l i18n.Lang) string {
+		var sb strings.Builder
+		for _, c := range b.legendPanel(l).(discordgo.Container).Components {
+			if td, ok := c.(discordgo.TextDisplay); ok {
+				sb.WriteString(td.Content + "\n")
+			}
+		}
+		return sb.String()
+	}
+	for _, l := range i18n.Langs {
+		legend := texts(l)
+		for _, want := range []string{b.game.LeaderEmoji, anyEmoji} {
+			if !strings.Contains(legend, want) {
+				t.Errorf("%s legend lacks %s", l, want)
+			}
+		}
+		for _, r := range b.game.Roles {
+			if !strings.Contains(legend, r.Emoji+" "+r.Name) {
+				t.Errorf("%s legend lacks the %s role", l, r.Name)
+			}
+		}
+		for _, c := range b.game.Classes {
+			if !strings.Contains(legend, c.Emoji+` **`+c.Name+`**`) {
+				t.Errorf("%s legend lacks the %s class", l, c.Name)
+			}
+		}
+	}
+	// The Chanter only heals while no one else does.
+	if want := "Chanter joining as " + b.roleBullet("healer") + " Healer shows as " + b.roleBullet("dps") + " DPS"; !strings.Contains(texts(i18n.English), want) {
+		t.Errorf("legend lacks %q", want)
 	}
 }
 
@@ -719,12 +771,12 @@ func TestCardSpeaksTheServersLanguage(t *testing.T) {
 		return string(raw)
 	}
 	cs, en := texts(i18n.Czech), texts(i18n.English)
-	for _, want := range []string{"Hledáme ještě 3", "Libovolné povolání", "Přidat se", "GS 2", "Vedoucí"} {
+	for _, want := range []string{"Hledáme ještě 3", "Libovolné povolání", "Přidat se", "GS 2", "V partě (1)"} {
 		if !strings.Contains(cs, want) {
 			t.Errorf("Czech card lacks %q", want)
 		}
 	}
-	for _, want := range []string{"Looking for 3 more", "Any class", "Join", "GS 2,600+", "Leader"} {
+	for _, want := range []string{"Looking for 3 more", "Any class", "Join", "GS 2,600+", "In the party (1)"} {
 		if !strings.Contains(en, want) {
 			t.Errorf("English card lacks %q", want)
 		}

@@ -43,6 +43,7 @@ var en = map[string]string{
 	"cmd.network.new_code":      "Replace the join code so the old one stops working (network owner only)",
 	"cmd.help":                  "Show how to find a party or post a run (only you see it)",
 	"cmd.help_public":           "Post the guide in this channel for everyone",
+	"cmd.legend":                "Show what the role, class and other icons on posts mean (only you see it)",
 	"cmd.find":                  "List the open runs you can join with your class and gear score",
 	"cmd.find.dungeon":          "Only runs for this dungeon or raid",
 	"cmd.notify":                "Get a DM when a new run is looking for what you play",
@@ -54,7 +55,7 @@ var en = map[string]string{
 	"card.full":             "**✅ Party full**",
 	"card.closed":           "**🔒 Closed by the leader**",
 	"card.expired":          "**⌛ Expired**",
-	"card.leader":           "👑 **Leader:** ",
+	"card.leader":           "**Leader:** ",
 	"card.start":            "🕒 **Start:** ",
 	"card.start_default":    "as soon as the party is full",
 	"card.join":             "Join",
@@ -308,7 +309,14 @@ var en = map[string]string{
 	"help.find":   "### 🔎 Find a party\n• %s lists the open runs you can join with your class and gear score; pick one to join. %s DMs you when a new one comes up.\n• Or watch the LFG channel: posts from this server and the servers linked with it show up there.\n• Click **✋ Join**, pick your role and class, and enter your gear score and character name. You're added to the thread under the post.\n• Party already full? **🪑 Join as reserve**: if a player with your role leaves, you move up automatically.\n• Talk to the leader and the party in that thread: what you write there also shows in the thread on every linked server.\n• When the leader accepts you, you're pinged once in the thread, and reminded %s before a planned start. Message the leader for the in-game invite.\n• Changed your mind? Click **Leave** on the post.\n• %s saves your main role, class, character name and gear score, so the join form is filled in for you. You can turn the reminders off there.",
 	"help.post":   "### 📣 Post a run\n• %s opens a private panel: dungeon or raid, difficulty, who you need (%s, specific classes or Any class), how many players are missing and what you play.\n• Optional: a minimum gear score, a start time and a note.\n• **Post** sends it to every linked server. You're pinged once, in the thread under the post, when the first player joins.\n• **⚙️ Manage** on the post: accept or decline players and reserves, change the gear score, start and note (✏️), adjust the missing count (−1/+1), **🔒 Close** or **🗑️ Delete** it.\n• The thread under the post is shared: you and everyone who joined are in it on every linked server you're on, and messages reach all of them.\n• You can have up to %d open runs. Runs stay open for %s and disappear 24 hours after they end.\n• %s shows how many runs were posted and filled, and the most popular dungeons.",
 	"help.admin":  "### 🛠️ Server admins\n• %s picks the LFG channel, the role to ping and the language, and checks the bot's permissions.\n• %s checks permissions, the ping role and the server's links at any time.\n• %s starts a network and gives a join code; other servers use %s to link up and share posts. %s shows the linked servers.\n• %s stops posts arriving here; %s posts this guide for everyone.",
-	"help.footer": "-# %s shows this guide just to you.",
+	"help.footer": "-# %s shows this guide just to you, %s what the icons mean.",
+
+	// /legend.
+	"legend.title":   "## 🔣 What the icons mean",
+	"legend.roles":   "### Roles\n",
+	"legend.classes": "### Classes",
+	"legend.backup":  "\n-# %s joining as %s shows as %s once another class fills that role in the party.",
+	"legend.post":    "### On a post\n%s Party leader\n✅ In the party · party full\n⏳ Waiting for the leader to accept them\n🪑 Reserves: they move up when a player with their role leaves\n🕒 Start, in your own time zone\n🔒 Closed by the leader · ⌛ Expired\n`Name` In-game character name, to copy for the invite",
 
 	"details.start":      "Start (date and time)",
 	"details.start_help": "e.g. 21.09.2026 10:15 or 10:15 · time zone %s (/profile)",

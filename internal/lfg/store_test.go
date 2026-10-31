@@ -2,6 +2,7 @@ package lfg
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -387,6 +388,37 @@ func TestProfiles(t *testing.T) {
 	}
 	if got, ok := s.Profile("u1"); !ok || got != want {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestOlderPostsTakeTheLeaderFromTheProfile(t *testing.T) {
+	s, path := openTestStore(t)
+	s.SetProfile(Profile{UserID: "leader", ClassID: "templar", RoleID: "tank", GS: 3100})
+	old, err := s.CreatePost(newPost(2), 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	picked := newPost(2)
+	picked.LeaderClass, picked.LeaderRole = "cleric", "healer"
+	if picked, err = s.CreatePost(picked, 9); err != nil {
+		t.Fatal(err)
+	}
+	// Go back to before the profile backfill.
+	if _, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-1)); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got, _ := reopened.Post(old.ID); got.LeaderClass != "templar" || got.LeaderRole != "tank" || got.LeaderGS != 3100 {
+		t.Errorf("older post's leader: %+v", got.Leader())
+	}
+	if got, _ := reopened.Post(picked.ID); got.LeaderClass != "cleric" || got.LeaderRole != "healer" {
+		t.Errorf("the leader's own pick was replaced: %+v", got.Leader())
 	}
 }
 

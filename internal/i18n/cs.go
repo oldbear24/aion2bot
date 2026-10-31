@@ -51,6 +51,7 @@ var cs = map[string]string{
 	"cmd.network.new_code":      "Vyměň kód pro připojení, starý přestane platit (jen vlastník sítě)",
 	"cmd.help":                  "Ukaž, jak najít partu nebo založit nábor (uvidíš jen ty)",
 	"cmd.help_public":           "Zveřejni návod v tomto kanálu pro všechny",
+	"cmd.legend":                "Ukáže, co znamenají ikony rolí, povolání a další u náborů (vidíš jen ty)",
 	"cmd.find":                  "Ukaž otevřené nábory, do kterých se s tvým povoláním a GS dostaneš",
 	"cmd.find.dungeon":          "Jen nábory do tohoto dungeonu nebo raidu",
 	"cmd.notify":                "Dostávej zprávu, když nový nábor hledá to, co hraješ",
@@ -62,7 +63,7 @@ var cs = map[string]string{
 	"card.full":             "**✅ Parta je plná**",
 	"card.closed":           "**🔒 Uzavřeno vedoucím**",
 	"card.expired":          "**⌛ Vypršelo**",
-	"card.leader":           "👑 **Vedoucí:** ",
+	"card.leader":           "**Vedoucí:** ",
 	"card.start":            "🕒 **Začátek:** ",
 	"card.start_default":    "jakmile bude parta plná",
 	"card.join":             "Přidat se",
@@ -316,7 +317,14 @@ var cs = map[string]string{
 	"help.find":   "### 🔎 Najdi partu\n• %s ukáže otevřené nábory, do kterých se s tvým povoláním a GS dostaneš; vyber jeden a přidej se. %s ti napíše, až se objeví nový.\n• Nebo sleduj LFG kanál: objevují se tam nábory z tohoto serveru i z propojených serverů.\n• Klikni na **✋ Přidat se**, vyber roli a povolání a zadej své GS a jméno postavy. Bot tě přidá do vlákna pod náborem.\n• Parta už je plná? **🪑 Přidat se jako náhradník**: když odejde hráč s tvou rolí, automaticky se posuneš.\n• V tom vláknu se domluvíš s vedoucím a partou: co tam napíšeš, uvidí i vlákno na všech propojených serverech.\n• Až tě vedoucí přijme, dostaneš ve vláknu jednu zmínku a %s před plánovaným začátkem připomínku. Napiš vedoucímu o pozvánku ve hře.\n• Už nechceš? Klikni u náboru na **Odejít**.\n• %s uloží tvou hlavní roli, povolání, jméno postavy a GS, takže se ti formulář předvyplní. Vypneš tam i připomínky.",
 	"help.post":   "### 📣 Založ nábor\n• %s otevře soukromý panel: dungeon nebo raid, obtížnost, koho hledáte (%s, konkrétní povolání nebo Libovolné povolání), kolik hráčů chybí a za co hraješ.\n• Nepovinně: minimální GS, začátek a poznámka.\n• **Zveřejnit** pošle nábor na všechny propojené servery. Až se přidá první hráč, dostaneš jednu zmínku ve vláknu pod náborem.\n• **⚙️ Spravovat** u náboru: přijímej nebo odmítej hráče i náhradníky, měň GS, začátek a poznámku (✏️), uprav počet chybějících (−1/+1), **🔒 Uzavři** nebo **🗑️ Smaž** nábor.\n• Vlákno pod náborem je sdílené: ty i všichni přihlášení v něm jste na každém propojeném serveru, kde jste členy, a zprávy se dostanou všude.\n• Otevřených náborů můžeš mít až %d. Nábory platí %s a 24 hodin po skončení zmizí.\n• %s ukáže, kolik náborů vzniklo a naplnilo se a které dungeony jsou nejoblíbenější.",
 	"help.admin":  "### 🛠️ Pro správce serveru\n• %s nastaví LFG kanál, roli k označení a jazyk a zkontroluje oprávnění bota.\n• %s kdykoli zkontroluje oprávnění, roli k označení a propojení serveru.\n• %s založí síť a dá kód pro připojení; ostatní servery se připojí přes %s a sdílí nábory. %s ukáže propojené servery.\n• %s vypne příjem náborů tady; %s zveřejní tento návod pro všechny.",
-	"help.footer": "-# %s ukáže tento návod jen tobě.",
+	"help.footer": "-# %s ukáže tento návod jen tobě, %s co znamenají ikony.",
+
+	// /legend.
+	"legend.title":   "## 🔣 Co znamenají ikony",
+	"legend.roles":   "### Role\n",
+	"legend.classes": "### Povolání",
+	"legend.backup":  "\n-# %s přihlášený jako %s se ukáže jako %s, jakmile tu roli v partě plní jiné povolání.",
+	"legend.post":    "### U náboru\n%s Vedoucí party\n✅ V partě · parta je plná\n⏳ Čekají, až je vedoucí přijme\n🪑 Náhradníci: posunou se, když odejde hráč s jejich rolí\n🕒 Začátek, ve tvém časovém pásmu\n🔒 Uzavřel vedoucí · ⌛ Vypršelo\n`Jméno` Jméno postavy ve hře, ke zkopírování pro pozvánku",
 
 	"details.start":      "Začátek (datum a čas)",
 	"details.start_help": "např. 21.09.2026 10:15 nebo 10:15 · pásmo %s (/profile)",

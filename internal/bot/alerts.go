@@ -160,7 +160,7 @@ func (b *Bot) alertDM(p lfg.Post, ref lfg.MessageRef, l i18n.Lang) discordgo.Mes
 		s += "\n" + line
 	}
 	s += "\n" + l.T("card.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
-	s += "\n" + l.T("card.leader") + "**" + escape(p.LeaderName) + "**"
+	s += "\n" + b.game.LeaderEmoji + " " + l.T("card.leader") + "**" + escape(p.LeaderName) + "**"
 	if p.GuildName != "" {
 		s += " · *" + escape(truncate(p.GuildName, 40)) + "*"
 	}

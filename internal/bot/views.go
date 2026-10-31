@@ -104,12 +104,8 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	}
 	header += "\n" + status
 
-	info := l.T("card.leader") + who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID)) +
-		charSuffix(p.LeaderChar)
-	if p.GuildName != "" && p.GuildID != guildID {
-		info += " · *" + escape(truncate(p.GuildName, 40)) + "*"
-	}
-	info += "\n" + l.T("card.start") + startText(p.StartAt, p.Start, l)
+	// The leader heads the party in the roster.
+	info := l.T("card.start") + startText(p.StartAt, p.Start, l)
 
 	var body []discordgo.MessageComponent
 	if dungeon.Image != "" {
@@ -193,7 +189,8 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 	line := func(pl lfg.Player) string {
 		s := b.roleBullet(b.shownRole(p, pl)) + " "
 		if pl.UserID == p.LeaderID {
-			s += "👑 "
+			// The crown stands in for the bullet of a leader without a role.
+			s = strings.TrimPrefix(s, "• ") + b.game.LeaderEmoji + " "
 		}
 		if leaderView {
 			s += "**" + escape(pl.Name) + "** <@" + pl.UserID + ">"
@@ -236,7 +233,7 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 	sb.WriteString(l.T("roster.in_party", len(party)) + list(party) + "\n")
 	if len(p.Applicants) > 0 {
 		sb.WriteString(l.T("roster.waiting", len(p.Applicants)) + list(p.Applicants) + "\n")
-	} else if p.Status == lfg.StatusOpen && len(p.Reserves) == 0 {
+	} else if p.Status == lfg.StatusOpen && len(p.Accepted) == 0 && len(p.Reserves) == 0 {
 		sb.WriteString(l.T("roster.empty_open"))
 	}
 	if len(p.Reserves) > 0 {
