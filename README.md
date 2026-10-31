@@ -128,11 +128,11 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 }
 ```
 
-The list covers what is live on the **global** version as of 30 October 2026:
-- **Expedition (5 players):** Krao Cave, Draupnir, Urugugu Canyon, Fire Temple, Vakron Sky Island, Ferocious Horn Den. Exploration / Conquest, plus Conquest [Hard] on Krao Cave and Draupnir.
+The list covers what is live on the **global** version as of 31 October 2026:
+- **Expedition (5 players):** Krao Cave, Draupnir, Urugugu Canyon, Fire Temple, Vakron Sky Island, Ferocious Horn Den. Exploration / Conquest, plus Conquest [Hard] on Krao Cave and Draupnir (GS 2,600) and on Urugugu Canyon and Vakron Sky Island (GS 2,700, since 28 October).
 - **Transcendence (5 players):** Deus Research Base, Shattered Arkanis. Stages 1–4.
 - **Subjugation (4 players):** Dredgion Depot. Easy / Normal / Hard.
-- **Sanctuary raid (10 players):** Abyssal Forge: Ludra.
+- **Sanctuary raid (10 players):** Abyssal Forge: Ludra. Normal (GS 2,800) / Hard (GS 3,000), both open from 4 November.
 
 Content only in the client files (Chalice of Muspel, Corroded Decontamination Facility, other hard modes) is left out; add it when it opens on global.
 Class roles: Templar tanks, Gladiator tanks or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.

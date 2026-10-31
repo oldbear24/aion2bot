@@ -5,7 +5,8 @@
   "dungeons": [
     { "id": "abyssal-forge-ludra", "name": "Abyssal Forge: Ludra", "emoji": "🏛️", "party_size": 10, "description": "Sanctuary raid",
       "modes": [
-        { "id": "conquest", "name": "Conquest", "gs": 2800 }
+        { "id": "conquest", "name": "Normal", "gs": 2800 },
+        { "id": "hard", "name": "Hard", "gs": 3000 }
       ] },
 
     { "id": "dredgion-depot", "name": "Dredgion Depot", "emoji": "⚓", "party_size": 4, "description": "Subjugation",
@@ -45,7 +46,8 @@
     { "id": "urugugu-canyon", "name": "Urugugu Canyon", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
       "modes": [
         { "id": "exploration", "name": "Exploration", "gs": 300 },
-        { "id": "conquest", "name": "Conquest", "gs": 1400 }
+        { "id": "conquest", "name": "Conquest", "gs": 1400 },
+        { "id": "conquest-hard", "name": "Conquest [Hard]", "gs": 2700 }
       ] },
     { "id": "fire-temple", "name": "Fire Temple", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
       "modes": [
@@ -55,7 +57,8 @@
     { "id": "vakron-sky-island", "name": "Vakron Sky Island", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
       "modes": [
         { "id": "exploration", "name": "Exploration", "gs": 1400 },
-        { "id": "conquest", "name": "Conquest", "gs": 1400 }
+        { "id": "conquest", "name": "Conquest", "gs": 1400 },
+        { "id": "conquest-hard", "name": "Conquest [Hard]", "gs": 2700 }
       ] },
     { "id": "ferocious-horn-den", "name": "Ferocious Horn Den", "emoji": "🗺️", "party_size": 5, "description": "Expedition",
       "modes": [
