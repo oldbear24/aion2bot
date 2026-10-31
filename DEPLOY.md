@@ -18,16 +18,11 @@ The image holds only the bot and `game.json`. The bot's data (linked servers, po
 - The bot's token from the [Discord Developer Portal](https://discord.com/developers/applications) → your app → **Bot**.
 - The bot invited to your servers. See the invite link in [README.md](README.md#setup).
 
-While the GitHub repository is private, the image is private too. Log the server in once with a
-[personal access token (classic)](https://github.com/settings/tokens) that has only the `read:packages` scope:
-
-```sh
-echo YOUR_TOKEN | docker login ghcr.io -u oldbear24 --password-stdin
-```
+The image is public, so no `docker login` is needed.
 
 ## 2. Start it
 
-Make a folder on the server and copy [`compose.yaml`](compose.yaml) from the repository into it. Once the repository is public, you can download it directly:
+Make a folder on the server and download [`compose.yaml`](compose.yaml) into it:
 
 ```sh
 mkdir aion2bot && cd aion2bot
@@ -138,5 +133,5 @@ A tag like `v1.1.0-rc.1` publishes only `1.1.0-rc.1`, without moving `latest`.
 | `DISCORD_TOKEN is not set` | `.env` is missing or not next to `compose.yaml` |
 | `Authentication failed` / 4004 in the log | The token was reset in the Developer Portal. Put the new one in `.env` and run `docker compose up -d` |
 | `unable to open database file` | The volume isn't writable by user 65532. Run the `chown` command from section 6 |
-| `denied` when pulling | The image is private; log in to `ghcr.io` (section 1) |
+| `denied` or `not found` when pulling | Check the image name and tag against the [releases](https://github.com/oldbear24/aion2bot/releases) |
 | Pings arrive as DMs instead of in a thread | The bot lacks thread permissions in the LFG channel. Run `/lfg-check` |
