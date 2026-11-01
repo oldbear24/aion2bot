@@ -23,6 +23,7 @@ var en = map[string]string{
 
 	// Slash command descriptions.
 	"cmd.lfg":                   "Post that your party is missing players, on every linked server",
+	"cmd.abyss":                 "Gather players for an Abyss event or invasion, on every linked server",
 	"cmd.setup":                 "Choose the channel where LFG posts appear on this server",
 	"cmd.setup.channel":         "Channel for LFG posts",
 	"cmd.setup.ping_role":       "Role to ping when a new post arrives",
@@ -45,7 +46,7 @@ var en = map[string]string{
 	"cmd.help_public":           "Post the guide in this channel for everyone",
 	"cmd.legend":                "Show what the role, class and other icons on posts mean (only you see it)",
 	"cmd.find":                  "List the open runs you can join with your class and gear score",
-	"cmd.find.dungeon":          "Only runs for this dungeon or raid",
+	"cmd.find.dungeon":          "Only runs for this dungeon, raid or Abyss event",
 	"cmd.notify":                "Get a DM when a new run is looking for what you play",
 	"cmd.stats":                 "Show how many runs were posted and filled, and the most popular dungeons",
 	"cmd.stats.days":            "Period (default: last 7 days)",
@@ -73,6 +74,12 @@ var en = map[string]string{
 	"any.name":              "Any class",
 	"any.desc":              "Anyone is welcome",
 
+	// An Abyss rally's post, where it differs.
+	"card.abyss_looking":       "**👥 %d going**%s — %s",
+	"card.abyss_full":          "**✅ Group full**",
+	"card.abyss_start_default": "right away",
+	"roster.abyss_in_party":    "**✅ Going (%d)**",
+
 	// The /lfg panel.
 	"draft.title":         "### 📣 Find party members\nFill in the menus and press **Post**. Your post goes to every linked server.",
 	"draft.dungeon":       "-# Dungeon or raid",
@@ -92,8 +99,8 @@ var en = map[string]string{
 	"draft.details":       "Gear score, time & note",
 	"draft.post":          "Post",
 	"draft.cancel":        "Cancel",
-	"draft.expired":       "This form has expired. Run `/lfg` again.",
-	"draft.cancelled":     "Cancelled. Run `/lfg` whenever you want to start again.",
+	"draft.expired":       "This form has expired. Run %s again.",
+	"draft.cancelled":     "Cancelled. Run %s whenever you want to start again.",
 	"draft.bad_gs":        "Gear score must be a number, like 3000 or 3.2k.",
 	"draft.need_dungeon":  "Choose a dungeon or raid first.",
 	"draft.need_looking":  "Choose who you're looking for: a role, a class, or Any class.",
@@ -103,6 +110,19 @@ var en = map[string]string{
 	"draft.unreachable":   "\n-# Couldn't be reached: %s.",
 	"draft.nowhere":       "There's nowhere to post from this server yet. An admin needs to run `/lfg-setup` here, or link this server to others with `/lfg-network`.",
 	"draft.too_many":      "Open posts: %s — that's the most one player can run at once. Close one to start another:%s",
+
+	// The /lfg-abyss panel, where it differs.
+	"draft.abyss_title":        "### 🏰 Gather players for the Abyss\nPick the event and press **Post**. Players join straight in, on every linked server.",
+	"draft.abyss_dungeon":      "-# Abyss event or invasion",
+	"draft.abyss_dungeon_ph":   "What are you going to?",
+	"draft.abyss_mode":         "-# Zone",
+	"draft.abyss_mode_ph":      "Choose the zone",
+	"draft.size":               "-# Group size, counting you",
+	"draft.size_ph":            "How many players at most?",
+	"draft.size_none":          "No limit",
+	"draft.size_none_desc":     "Anyone who fits can join",
+	"draft.abyss_need_dungeon": "Choose an Abyss event first.",
+	"draft.abyss_live":         "### ✅ Your rally is live on %s\nPlayers join straight in, without waiting for you. You're pinged in the thread under the post when the first one does. **Manage** removes players and changes the group size.",
 
 	// Gear score, time & note form.
 	"details.title":   "Gear score, time & note",
@@ -114,22 +134,25 @@ var en = map[string]string{
 	"details.note_ph": "Experience, voice chat, loot rules…",
 
 	// Joining.
-	"join.title":         "Join %s",
-	"join.choice":        "Your role and class",
-	"join.looking":       "Looking for: %s",
-	"join.choice_ph":     "What are you bringing?",
-	"join.gs":            "Your gear score",
-	"join.gs_optional":   "Optional, but it helps the leader decide.",
-	"join.gs_required":   "This party needs GS %s or higher.",
-	"join.gs_ph":         "e.g. 3150",
-	"join.class_gone":    "That role or class isn't needed for this post anymore.",
-	"join.bad_gs":        "Gear score must be a number, like 3150. Press **Join** to try again.",
-	"join.gs_low":        "This party needs GS **%s** or higher, and you entered %s. Keep an eye out for other groups!",
-	"join.done":          "✅ You're on the list for **%s** as %s.\nYou'll be pinged when **%s** accepts you.",
-	"join.title_reserve": "Reserve for %s",
-	"join.reserve":       "🪑 The party is full, so you're reserve **#%[3]d** for **%[1]s** as %[2]s.\nIf a player with your role leaves, you move up into the party automatically and get pinged.",
-	"leave.leader":       "You're the leader of this post. Close it from ⚙️ **Manage** instead.",
-	"leave.done":         "You left the **%s** post.",
+	"join.title":             "Join %s",
+	"join.choice":            "Your role and class",
+	"join.looking":           "Looking for: %s",
+	"join.choice_ph":         "What are you bringing?",
+	"join.gs":                "Your gear score",
+	"join.gs_optional":       "Optional, but it helps the leader decide.",
+	"join.gs_required":       "This party needs GS %s or higher.",
+	"join.gs_ph":             "e.g. 3150",
+	"join.class_gone":        "That role or class isn't needed for this post anymore.",
+	"join.bad_gs":            "Gear score must be a number, like 3150. Press **Join** to try again.",
+	"join.gs_low":            "This party needs GS **%s** or higher, and you entered %s. Keep an eye out for other groups!",
+	"join.done":              "✅ You're on the list for **%s** as %s.\nYou'll be pinged when **%s** accepts you.",
+	"join.title_reserve":     "Reserve for %s",
+	"join.reserve":           "🪑 The party is full, so you're reserve **#%[3]d** for **%[1]s** as %[2]s.\nIf a player with your role leaves, you move up into the party automatically and get pinged.",
+	"join.abyss_gs_optional": "Optional. It shows next to your name on the post.",
+	"join.abyss_done":        "✅ You're in the **%s** rally as %s, with **%s** leading.\nThe plan is made in the thread under the post; you've been added to it.",
+	"join.abyss_reserve":     "🪑 The group is full, so you're reserve **#%[3]d** for **%[1]s** as %[2]s.\nYou move up as soon as a spot opens, and get pinged.",
+	"leave.leader":           "You're the leader of this post. Close it from ⚙️ **Manage** instead.",
+	"leave.done":             "You left the **%s** post.",
 
 	// Notes in the thread under a post.
 	"thread.join_title":     "### ✋ New player",
@@ -157,6 +180,21 @@ var en = map[string]string{
 	"thread.gs":             "📈 **Min. gear score:** %s",
 	"thread.gs_none":        "none",
 	"thread.note":           "📝 **Note:** %s",
+
+	"thread.abyss_join":         "%s, the first player joined your %s rally:",
+	"thread.abyss_join_hint":    "Players join without waiting for you. Remove them or change the group size with ⚙️ **Manage** on the post.",
+	"thread.abyss_reserve":      "%s, a player signed up as a reserve for your %s rally:",
+	"thread.abyss_reserve_hint": "They move up as soon as a spot opens, or when you raise the group size with ⚙️ **Manage**.",
+	"thread.abyss_moved_title":  "### 🗺️ Event changed",
+	"dm.abyss_leader":           "### ✋ First player for your %s rally\n%s joined.",
+	"manage.abyss_full":         "✅ The group is full — new players join as reserves and move up, first come first served, when a spot opens or you raise the size.",
+	"manage.abyss_kick_ph":      "❌ Remove players…",
+	"manage.abyss_move":         "Change event",
+	"manage.abyss_footer":       "-# Players join without waiting for you; you're pinged once, for the first. ✏️ changes the gear score, start and note at any time, 🗺️ the event. **Close** keeps the post visible for 24 hours, and you can reopen it; **Delete** removes it from every server now.",
+	"move.abyss_title":          "### 🗺️ Change the event",
+	"move.abyss_help":           "Now: %s. Everyone on the post comes along, and the group size stays.",
+	"move.abyss_yes":            "Change event",
+	"find.abyss_option_missing": "%d going",
 
 	// DMs, when a ping can't go to a thread.
 	"ping.leader_char": "🎮 The leader plays %s in game.",
@@ -289,7 +327,7 @@ var en = map[string]string{
 
 	// /lfg-notify.
 	"alert.title":       "### 🔔 Alerts for new runs\nI'll DM you when a new post is looking for what you play. Every change is saved right away.",
-	"alert.dungeons":    "-# Dungeons and raids",
+	"alert.dungeons":    "-# Dungeons, raids and Abyss events",
 	"alert.dungeons_ph": "Which runs do you want to hear about?",
 	"alert.as":          "-# What you play — one or more",
 	"alert.as_ph":       "Your roles and classes",
@@ -335,6 +373,7 @@ var en = map[string]string{
 	"help.title":  "## 📖 AION 2 party finder",
 	"help.find":   "### 🔎 Find a party\n• %s lists the open runs you can join with your class and gear score; pick one to join. %s DMs you when a new one comes up.\n• Or watch the LFG channel: posts from this server and the servers linked with it show up there.\n• Click **✋ Join**, pick your role and class, and enter your gear score and character name. You're added to the thread under the post.\n• Party already full? **🪑 Join as reserve**: if a player with your role leaves, you move up automatically.\n• Talk to the leader and the party in that thread: what you write there also shows in the thread on every linked server.\n• When the leader accepts you, you're pinged once in the thread, and reminded %s before a planned start. Message the leader for the in-game invite.\n• Changed your mind? Click **Leave** on the post.\n• %s saves your main role, class, character name and gear score, so the join form is filled in for you. You can turn the reminders off there.",
 	"help.post":   "### 📣 Post a run\n• %s opens a private panel: dungeon or raid, difficulty, who you need (%s, specific classes or Any class), how many players are missing and what you play.\n• Optional: a minimum gear score, a start time and a note.\n• **Post** sends it to every linked server. You're pinged once, in the thread under the post, when the first player joins.\n• **⚙️ Manage** on the post: accept or decline players and reserves, change the gear score, start and note (✏️), adjust the missing count (−1/+1), take the party to another dungeon (🗺️), **🔒 Close** or **🗑️ Delete** it, and **🔓 Reopen** it within 24 hours of closing.\n• The thread under the post starts with it, so players can ask you questions there. It's shared: you and everyone who joined are in it on every linked server you're on, and messages reach all of them.\n• You can have up to %d open runs. Runs stay open for %s and disappear 24 hours after they end.\n• %s shows how many runs were posted and filled, and the most popular dungeons.",
+	"help.abyss":  "### 🏰 Abyss events\n• %s gathers players for %s. They join straight in, without waiting for you, up to the group size you pick, or with no limit.\n• Once the group is full, new players join as reserves and move up, first come first served, when a spot opens.\n• **⚙️ Manage** removes players and changes the group size. The rest works like any run: the thread, gear score, start and note, reminders, **🔒 Close** and **🔓 Reopen**.",
 	"help.admin":  "### 🛠️ Server admins\n• %s picks the LFG channel, the role to ping and the language, and checks the bot's permissions.\n• %s checks permissions, the ping role and the server's links at any time.\n• %s starts a network and gives a join code; other servers use %s to link up and share posts. %s shows the linked servers.\n• %s stops posts arriving here; %s posts this guide for everyone.",
 	"help.footer": "-# %s shows this guide just to you, %s what the icons mean.",
 
@@ -343,7 +382,7 @@ var en = map[string]string{
 	"legend.roles":   "### Roles\n",
 	"legend.classes": "### Classes",
 	"legend.backup":  "\n-# %s joining as %s shows as %s once another class fills that role in the party.",
-	"legend.post":    "### On a post\n%s Party leader\n✅ In the party · party full\n⏳ Waiting for the leader to accept them\n🪑 Reserves: they move up when a player with their role leaves\n🕒 Start, in your own time zone\n🔒 Closed by the leader · ⌛ Expired\n`Name` In-game character name, to copy for the invite",
+	"legend.post":    "### On a post\n%s Party leader\n✅ In the party · party full\n⏳ Waiting for the leader to accept them\n🪑 Reserves: they move up when a player with their role leaves\n🕒 Start, in your own time zone\n🔒 Closed by the leader · ⌛ Expired\n👥 Abyss rally: how many are going, and the group size\n`Name` In-game character name, to copy for the invite",
 
 	"details.start":      "Start (date and time)",
 	"details.start_help": "e.g. 21.09.2026 10:15 or 10:15 · time zone %s (/profile)",

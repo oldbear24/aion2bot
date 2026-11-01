@@ -45,6 +45,13 @@ func (b *Bot) helpPanel(l i18n.Lang, admin bool) discordgo.MessageComponent {
 		text(l.T("help.post", b.cmd("lfg"), strings.Join(roles, " · "),
 			b.game.MaxRunsPerLeader, l.N(b.game.PostTTLHours, "n.hours"), b.cmd("lfg-stats"))),
 	}
+	if len(b.game.Abyss) > 0 {
+		names := make([]string, 0, len(b.game.Abyss))
+		for _, d := range b.game.Abyss {
+			names = append(names, d.Name)
+		}
+		parts = append(parts, divider(), text(l.T("help.abyss", b.cmd("lfg-abyss"), strings.Join(names, ", "))))
+	}
 	if admin {
 		parts = append(parts, divider(),
 			text(l.T("help.admin", b.cmd("lfg-setup"), b.cmd("lfg-check"), b.cmd("lfg-network create"),

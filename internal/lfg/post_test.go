@@ -252,3 +252,59 @@ func TestReopen(t *testing.T) {
 		t.Fatalf("reopen expired: err %v status %s expires %v", err, p.Status, p.ExpiresAt)
 	}
 }
+
+func TestRallyJoinsStraightIn(t *testing.T) {
+	p := Post{LeaderID: "leader", Rally: true, Size: 3, Status: StatusOpen, LookingFor: []string{"any"}}
+	for _, pl := range []Player{{UserID: "a", RoleID: "dps"}, {UserID: "b", RoleID: "tank"}, {UserID: "c", RoleID: "healer"}, {UserID: "d", RoleID: "dps"}} {
+		if err := p.AddApplicant(pl); err != nil {
+			t.Fatalf("join %s: %v", pl.UserID, err)
+		}
+	}
+	// The leader, a and b fill the group of 3 without anyone accepting
+	// them; c and d wait as reserves.
+	if len(p.Applicants) != 0 || len(p.Accepted) != 2 || len(p.Reserves) != 2 || p.Status != StatusFull || p.FilledAt.IsZero() || p.Missing != 0 {
+		t.Fatalf("after joining: %+v", p)
+	}
+	// The first reserve takes a freed spot, whatever their role.
+	if r, ok := p.Remove("a"); !ok || r.Promoted == nil || r.Promoted.UserID != "c" || p.Status != StatusFull {
+		t.Fatalf("remove a: %+v, status %s", r, p.Status)
+	}
+	// A bigger group takes the reserves in; it can't shrink below the
+	// players already in it.
+	if moved, err := p.SetSize(5); err != nil || len(moved) != 1 || moved[0].UserID != "d" || p.Status != StatusOpen || len(p.Reserves) != 0 {
+		t.Fatalf("raise the size: moved %v, err %v, %+v", moved, err, p)
+	}
+	if _, err := p.SetSize(3); !errors.Is(err, ErrPartyTooBig) || p.Size != 5 {
+		t.Fatalf("shrink below the group: err %v, size %d", err, p.Size)
+	}
+	// Without a limit, the group never fills.
+	if _, err := p.SetSize(0); err != nil {
+		t.Fatal(err)
+	}
+	for n := range 40 {
+		if err := p.AddApplicant(Player{UserID: fmt.Sprint("p", n)}); err != nil {
+			t.Fatalf("join %d: %v", n, err)
+		}
+	}
+	if p.Status != StatusOpen || len(p.Party()) != 44 || p.Crowded() {
+		t.Fatalf("unlimited rally: status %s, %d in it", p.Status, len(p.Party()))
+	}
+	// Changing the event keeps the group as it is.
+	if err := p.Move("abyss-boss", "", 5, 2, 9); err != nil || p.DungeonID != "abyss-boss" || p.Size != 0 || p.Missing != 0 {
+		t.Fatalf("move: err %v, %+v", err, p)
+	}
+	if err := p.Close(StatusClosed, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.SetSize(10); !errors.Is(err, ErrNotOpen) {
+		t.Fatalf("resize a closed rally: %v", err)
+	}
+	if err := p.Reopen(time.Hour, time.Now()); err != nil || p.Status != StatusOpen {
+		t.Fatalf("reopen: err %v, status %s", err, p.Status)
+	}
+
+	dungeon := newPost(2)
+	if _, err := dungeon.SetSize(5); !errors.Is(err, ErrNotRally) {
+		t.Fatalf("a dungeon post has no group size: %v", err)
+	}
+}

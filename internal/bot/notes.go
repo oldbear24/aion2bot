@@ -18,11 +18,14 @@ import (
 
 // joinNote tells the leader that a player wants to join, or signed up as a
 // reserve, with a Manage button to accept them.
+//
+// A rally's player is in already; the leader hears about the first one.
 func (b *Bot) joinNote(p lfg.Post, pl lfg.Player, reserve bool, guildID string, l i18n.Lang) discordgo.MessageComponent {
 	color, title, intro, hint := colorOpen, "thread.join_title", "thread.join", "thread.join_hint"
 	if reserve {
 		color, title, intro, hint = colorFull, "thread.reserve_title", "thread.reserve", "thread.reserve_hint"
 	}
+	intro, hint = textFor(intro, p.Rally), textFor(hint, p.Rally)
 	leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
 	return container(color,
 		text(l.T(title)+"\n"+l.T(intro, leader, b.runName(p))+"\n"+b.memberLine(p, pl, guildID, false, l)),
@@ -43,7 +46,7 @@ func (b *Bot) welcomeNote(p lfg.Post, pl lfg.Player, promoted bool, guildID stri
 	leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
 	details := []string{
 		l.T("thread.playing", b.bringing(p, pl)),
-		l.T("card.start") + startText(p.StartAt, p.Start, l),
+		l.T("card.start") + postStart(p, l),
 	}
 	if p.LeaderChar != "" {
 		details = append(details, l.T("thread.leader_char", charTag(p.LeaderChar)))
@@ -71,12 +74,28 @@ func (b *Bot) reminderNote(p lfg.Post, guildID string, l i18n.Lang) discordgo.Me
 	)
 }
 
+// rallyReminderNote is the reminder for a rally, which may be too big for
+// its roster to name everyone: it mentions the users pinged with it
+// instead, followed by how the group stands.
+func (b *Bot) rallyReminderNote(p lfg.Post, users []string, l i18n.Lang) discordgo.MessageComponent {
+	at := p.StartAt.Unix()
+	mentions := make([]string, 0, len(users))
+	for _, id := range users {
+		mentions = append(mentions, "<@"+id+">")
+	}
+	return container(colorFull,
+		text(l.T("thread.reminder_title", at)+"\n"+l.T("thread.reminder", b.runName(p), at)),
+		divider(),
+		text(strings.Join(mentions, " ")+"\n-# "+b.statusLine(p, l)),
+	)
+}
+
 // changesNote tells the threads what the leader changed on the post. The
 // caller checks that something did.
 func (b *Bot) changesNote(before, after lfg.Post, guildID string, l i18n.Lang) discordgo.MessageComponent {
 	var lines []string
 	if !before.StartAt.Equal(after.StartAt) {
-		lines = append(lines, l.T("card.start")+startText(after.StartAt, "", l))
+		lines = append(lines, l.T("card.start")+postStart(after, l))
 	}
 	if before.MinGS != after.MinGS {
 		gs := l.T("thread.gs_none")
@@ -101,7 +120,7 @@ func (b *Bot) changesNote(before, after lfg.Post, guildID string, l i18n.Lang) d
 func (b *Bot) moveNote(before, after lfg.Post, guildID string, l i18n.Lang) discordgo.MessageComponent {
 	leader := who(after.LeaderID, after.LeaderName, b.mentionable(after.LeaderID, after.GuildID, guildID))
 	return container(statusColor(after.Status),
-		text(l.T("thread.moved_title")+"\n"+l.T("thread.moved", leader, b.runName(before), b.runName(after))),
+		text(l.T(textFor("thread.moved_title", after.Rally))+"\n"+l.T("thread.moved", leader, b.runName(before), b.runName(after))),
 		divider(),
 		text(b.statusLine(after, l)),
 	)

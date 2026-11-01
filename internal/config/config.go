@@ -30,7 +30,12 @@ type Dungeon struct {
 	// PartySize caps how many players a post for this dungeon can be missing.
 	PartySize int `json:"party_size,omitempty"`
 	// Modes are the difficulties offered for this dungeon, easiest first.
+	// For an Abyss event they are its zones.
 	Modes []Mode `json:"modes,omitempty"`
+	// Abyss marks the entries of the "abyss" list: events and invasions
+	// that /lfg-abyss posts as open rallies, with a group size the leader
+	// picks instead of a party size.
+	Abyss bool `json:"-"`
 }
 
 type Mode struct {
@@ -81,8 +86,10 @@ type Game struct {
 	// pinged.
 	ReminderMinutes int       `json:"reminder_minutes"`
 	Dungeons        []Dungeon `json:"dungeons"`
-	Roles           []Role    `json:"roles"`
-	Classes         []Class   `json:"classes"`
+	// Abyss lists the Abyss events and invasions, posted with /lfg-abyss.
+	Abyss   []Dungeon `json:"abyss,omitempty"`
+	Roles   []Role    `json:"roles"`
+	Classes []Class   `json:"classes"`
 	// LeaderEmoji marks the leader of a party.
 	LeaderEmoji string `json:"-"`
 }
@@ -117,6 +124,9 @@ func LoadGame(path string) (*Game, error) {
 	}
 	g.MaxMissing = min(g.MaxMissing, maxSelectOptions)
 	g.LeaderEmoji = "👑"
+	for i := range g.Abyss {
+		g.Abyss[i].Abyss = true
+	}
 	if err := g.validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -127,11 +137,39 @@ func (g *Game) validate() error {
 	if len(g.Dungeons) == 0 || len(g.Dungeons) > maxSelectOptions {
 		return fmt.Errorf("need between 1 and %d dungeons, got %d", maxSelectOptions, len(g.Dungeons))
 	}
+	// /lfg-notify and /lfg-find offer the dungeons and the Abyss events
+	// in one menu.
+	if n := len(g.Dungeons) + len(g.Abyss); n > maxSelectOptions {
+		return fmt.Errorf("at most %d dungeons and Abyss events together, got %d", maxSelectOptions, n)
+	}
 	// The "Looking for" menu lists every role, "Any class" and every class.
 	if len(g.Classes) == 0 || len(g.Roles)+1+len(g.Classes) > maxSelectOptions {
 		return fmt.Errorf("need at least 1 class, and at most %d roles and classes together", maxSelectOptions-1)
 	}
+	// Posts name a dungeon or an Abyss event by its ID alone, so the two
+	// lists share their IDs.
 	seen := map[string]bool{}
+	for _, d := range g.Abyss {
+		if err := checkEntry("abyss event", d.ID, d.Name, seen); err != nil {
+			return err
+		}
+		if len(d.Modes) > maxSelectOptions {
+			return fmt.Errorf("abyss event %q: at most %d zones", d.ID, maxSelectOptions)
+		}
+		zones := map[string]bool{}
+		for _, m := range d.Modes {
+			if err := checkEntry("zone of "+d.ID, m.ID, m.Name, zones); err != nil {
+				return err
+			}
+			if m.GS < 0 {
+				return fmt.Errorf("abyss event %q zone %q: gs must not be negative", d.ID, m.ID)
+			}
+		}
+		// The leader picks the size of each rally.
+		if d.PartySize != 0 || slices.ContainsFunc(d.Modes, func(m Mode) bool { return m.PartySize != 0 }) {
+			return fmt.Errorf("abyss event %q: no party_size, the leader picks the group size of each post", d.ID)
+		}
+	}
 	for _, d := range g.Dungeons {
 		if err := checkEntry("dungeon", d.ID, d.Name, seen); err != nil {
 			return err
@@ -203,13 +241,25 @@ func (g *Game) PostTTL() time.Duration { return time.Duration(g.PostTTLHours) * 
 
 func (g *Game) Reminder() time.Duration { return time.Duration(g.ReminderMinutes) * time.Minute }
 
+// Dungeon finds a dungeon or an Abyss event by its ID.
 func (g *Game) Dungeon(id string) (Dungeon, bool) {
-	for _, d := range g.Dungeons {
+	for _, d := range g.All() {
 		if d.ID == id {
 			return d, true
 		}
 	}
 	return Dungeon{}, false
+}
+
+// All lists the dungeons, then the Abyss events.
+func (g *Game) All() []Dungeon { return slices.Concat(g.Dungeons, g.Abyss) }
+
+// Content lists the Abyss events, or else the dungeons.
+func (g *Game) Content(abyss bool) []Dungeon {
+	if abyss {
+		return g.Abyss
+	}
+	return g.Dungeons
 }
 
 // DungeonOrUnknown keeps old posts renderable after a dungeon was removed from the config.

@@ -150,7 +150,7 @@ CREATE INDEX IF NOT EXISTS alerts_by_guild ON alerts (guild_id);`
 var postColumns = []string{
 	"id", "leader_id", "leader_name", "guild_id", "guild_name", "dungeon_id", "mode_id", "min_gs", "looking_for",
 	"missing", "start", "note", "status", "created_at", "expires_at", "closed_at", "revision", "pinged", "start_at",
-	"leader_char", "filled_at", "reminded", "leader_class", "leader_role", "leader_gs",
+	"leader_char", "filled_at", "reminded", "leader_class", "leader_role", "leader_gs", "rally", "size",
 }
 
 var (
@@ -209,6 +209,9 @@ var migrations = []string{
 	`ALTER TABLE posts ADD COLUMN leader_class TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE posts ADD COLUMN leader_role TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE posts ADD COLUMN leader_gs INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE posts ADD COLUMN rally INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE posts ADD COLUMN size INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE runs ADD COLUMN unlimited INTEGER NOT NULL DEFAULT 0`,
 	// Posts made before the leader picked what they play take it from
 	// their profile.
 	`UPDATE posts SET (leader_class, leader_role, leader_gs) =
@@ -772,7 +775,7 @@ func loadPost(q querier, id string) (*Post, error) {
 	err := q.QueryRow(selectPost+" WHERE id = ?", id).Scan(
 		&p.ID, &p.LeaderID, &p.LeaderName, &p.GuildID, &p.GuildName, &p.DungeonID, &p.ModeID, &p.MinGS, &lookingFor,
 		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt,
-		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS)
+		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS, &p.Rally, &p.Size)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -845,7 +848,7 @@ func writePost(tx *sql.Tx, p *Post) error {
 		p.ID, p.LeaderID, p.LeaderName, p.GuildID, p.GuildName, p.DungeonID, p.ModeID, p.MinGS, string(lookingFor),
 		p.Missing, p.Start, p.Note, p.Status, millis(p.CreatedAt), millis(p.ExpiresAt), millis(p.ClosedAt), p.Revision,
 		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded, p.LeaderClass, p.LeaderRole,
-		p.LeaderGS)
+		p.LeaderGS, p.Rally, p.Size)
 	if err != nil {
 		return err
 	}

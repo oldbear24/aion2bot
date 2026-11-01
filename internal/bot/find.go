@@ -120,11 +120,7 @@ func (b *Bot) findPanel(found []lfg.Post, guildID string, prof lfg.Profile, l i1
 		if line := difficultyLine(dungeon, p.ModeID, p.MinGS, l); line != "" {
 			entry += " · " + line
 		}
-		status := l.T("card.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
-		if p.Status == lfg.StatusFull {
-			status = l.T("card.full") + partyFill(dungeon, p) + l.T("card.reserves_welcome")
-		}
-		entry += "\n" + status + "\n🕒 " + startText(p.StartAt, p.Start, l) + " · " + b.game.LeaderEmoji + " " + escape(truncate(p.LeaderName, 32))
+		entry += "\n" + b.statusLine(p, l) + "\n🕒 " + postStart(p, l) + " · " + b.game.LeaderEmoji + " " + escape(truncate(p.LeaderName, 32))
 		if ref, ok := b.findCopy(p, guildID); ok {
 			entry += " · [" + l.T("find.open") + "](" + messageLink(ref) + ")"
 		}
@@ -134,6 +130,9 @@ func (b *Bot) findPanel(found []lfg.Post, guildID string, prof lfg.Profile, l i1
 		lines.WriteString(entry)
 
 		desc := l.T("find.option_missing", p.Missing)
+		if p.Rally {
+			desc = l.T("find.abyss_option_missing", len(p.Party()))
+		}
 		if p.Status == lfg.StatusFull {
 			desc = l.T("find.option_reserve")
 		}

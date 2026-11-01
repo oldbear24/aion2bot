@@ -67,6 +67,21 @@
         { "id": "conquest", "name": "Conquest", "gs": 2100 }
       ] }
   ],
+  "abyss": [
+    { "id": "artifact-siege", "name": "Artifact Siege", "emoji": "🏰", "description": "Abyss siege",
+      "modes": [
+        { "id": "lower-reshanta", "name": "Lower Reshanta" },
+        { "id": "middle-reshanta", "name": "Middle Reshanta" }
+      ] },
+    { "id": "abyss-boss", "name": "Abyss Boss", "emoji": "👹", "description": "Abyss boss" },
+    { "id": "dimensional-invasion", "name": "Dimensional Invasion", "emoji": "🌌", "description": "PvE invasion" },
+    { "id": "rift-invasion", "name": "Rift Invasion", "emoji": "🚩", "description": "PvP invasion" },
+    { "id": "abyss-farm", "name": "Abyss Farm", "emoji": "💰", "description": "Abyss Points",
+      "modes": [
+        { "id": "lower-reshanta", "name": "Lower Reshanta" },
+        { "id": "middle-reshanta", "name": "Middle Reshanta" }
+      ] }
+  ],
   "roles": [
     { "id": "tank", "name": "Tank", "emoji": "🟦" },
     { "id": "dps", "name": "DPS", "emoji": "🟥" },

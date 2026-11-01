@@ -49,25 +49,47 @@ const (
 	actMoveTo    = "moveto"
 	actMoveMode  = "movemode"
 	actMoveYes   = "moveyes"
+	actSize      = "size"
 )
 
-// The /lfg panel uses "lfgd:<field>". It is ephemeral, so the draft is
-// found by the user who clicks.
+// The /lfg panel uses "lfgd:<field>", the /lfg-abyss panel "lfga:<field>".
+// They are ephemeral, so the draft is found by the user who clicks.
 const (
-	draftPrefix     = "lfgd:"
-	fieldDungeon    = "dungeon"
-	fieldMode       = "mode"
-	fieldLookingFor = "lookingfor"
-	fieldMissing    = "missing"
-	fieldPlays      = "plays"
-	fieldDetails    = "details"
-	fieldPost       = "post"
-	fieldCancel     = "cancel"
+	draftPrefix      = "lfgd:"
+	abyssDraftPrefix = "lfga:"
+	fieldDungeon     = "dungeon"
+	fieldMode        = "mode"
+	fieldLookingFor  = "lookingfor"
+	fieldMissing     = "missing"
+	fieldSize        = "size"
+	fieldPlays       = "plays"
+	fieldDetails     = "details"
+	fieldPost        = "post"
+	fieldCancel      = "cancel"
 )
 
 func customID(action, postID string) string { return "lfg:" + action + ":" + postID }
 
-func draftID(field string) string { return draftPrefix + field }
+func draftID(field string, abyss bool) string {
+	if abyss {
+		return abyssDraftPrefix + field
+	}
+	return draftPrefix + field
+}
+
+// rallySizes are the group sizes a rally can have, the leader included;
+// zero means no limit.
+var rallySizes = []int{0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100}
+
+// textFor picks the Abyss wording of a text for a rally: "draft.dungeon"
+// becomes "draft.abyss_dungeon". Both catalogs have both.
+func textFor(key string, rally bool) string {
+	if !rally {
+		return key
+	}
+	group, name, _ := strings.Cut(key, ".")
+	return group + ".abyss_" + name
+}
 
 func parseCustomID(id string) (action, postID string, ok bool) {
 	parts := strings.SplitN(id, ":", 3)
@@ -100,7 +122,7 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	}
 	header += "\n" + b.statusLine(p, l)
 
-	info := l.T("card.start") + startText(p.StartAt, p.Start, l)
+	info := l.T("card.start") + postStart(p, l)
 
 	var body []discordgo.MessageComponent
 	if dungeon.Image != "" {
@@ -148,9 +170,12 @@ func (b *Bot) statusLine(p lfg.Post, l i18n.Lang) string {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	switch p.Status {
 	case lfg.StatusOpen:
+		if p.Rally {
+			return l.T("card.abyss_looking", len(p.Party()), partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
+		}
 		return l.T("card.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
 	case lfg.StatusFull:
-		return l.T("card.full") + partyFill(dungeon, p) + l.T("card.reserves_welcome")
+		return l.T(textFor("card.full", p.Rally)) + partyFill(dungeon, p) + l.T("card.reserves_welcome")
 	case lfg.StatusClosed:
 		return l.T("card.closed")
 	}
@@ -181,13 +206,18 @@ func who(userID, name string, mention bool) string {
 }
 
 // partyFill is " (3/5)": how full the party is, counting the leader and
-// players found outside the bot.
+// players found outside the bot. A rally counts its players against its
+// size, and shows nothing without one.
 func partyFill(d config.Dungeon, p lfg.Post) string {
 	size := d.PartySizeFor(p.ModeID)
+	filled := max(1, size-p.Missing)
+	if p.Rally {
+		size, filled = p.Size, len(p.Party())
+	}
 	if size <= 0 {
 		return ""
 	}
-	return " (" + strconv.Itoa(max(1, size-p.Missing)) + "/" + strconv.Itoa(size) + ")"
+	return " (" + strconv.Itoa(filled) + "/" + strconv.Itoa(size) + ")"
 }
 
 // rosterText lists the party, by role, then the applicants and the
@@ -203,7 +233,7 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 
 	party := b.partyByRole(p)
 	var sb strings.Builder
-	sb.WriteString(l.T("roster.in_party", len(party)) + list(party) + "\n")
+	sb.WriteString(l.T(textFor("roster.in_party", p.Rally), len(party)) + list(party) + "\n")
 	if len(p.Applicants) > 0 {
 		sb.WriteString(l.T("roster.waiting", len(p.Applicants)) + list(p.Applicants) + "\n")
 	} else if p.Status == lfg.StatusOpen && len(p.Accepted) == 0 && len(p.Reserves) == 0 {
@@ -278,49 +308,78 @@ func (b *Bot) partyByRole(p lfg.Post) []lfg.Player {
 	return party
 }
 
-// draftPanel is the private /lfg form. The difficulty menu only appears
-// once a dungeon is chosen, because every dungeon has its own modes.
+// draftPanel is the private /lfg form, or the /lfg-abyss one, which asks
+// for an Abyss event and a group size instead of a dungeon and the missing
+// players. The difficulty (or zone) menu only appears once a dungeon is
+// chosen, because every dungeon has its own modes.
 func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
-	dungeon, chosen := b.game.Dungeon(d.DungeonID)
+	dungeon, chosen := b.draftDungeon(d)
+	id := func(field string) string { return draftID(field, d.Abyss) }
+	key := func(k string) string { return l.T(textFor(k, d.Abyss)) }
 
 	comps := []discordgo.MessageComponent{
-		text(l.T("draft.title")),
-		text(l.T("draft.dungeon")),
-		selectRow(draftID(fieldDungeon), l.T("draft.dungeon_ph"), 1, b.dungeonOptions(d.DungeonID, l)),
+		text(key("draft.title")),
+		text(key("draft.dungeon")),
+		selectRow(id(fieldDungeon), key("draft.dungeon_ph"), 1, b.dungeonOptions(b.game.Content(d.Abyss), d.DungeonID, l)),
 	}
 	if chosen && len(dungeon.Modes) > 0 {
 		comps = append(comps,
-			text(l.T("draft.mode")),
-			selectRow(draftID(fieldMode), l.T("draft.mode_ph"), 1, modeOptions(dungeon, d.ModeID, l)))
+			text(key("draft.mode")),
+			selectRow(id(fieldMode), key("draft.mode_ph"), 1, modeOptions(dungeon, d.ModeID, l)))
 	}
 	comps = append(comps,
 		text(l.T("draft.looking")),
-		selectRow(draftID(fieldLookingFor), l.T("draft.looking_ph"), maxSelectValues, b.lookingForOptions(d.LookingFor, l)),
-		text(l.T("draft.missing")),
-		selectRow(draftID(fieldMissing), l.T("draft.missing_ph"), 1, missingOptions(b.draftMaxMissing(d), d.Missing, l)),
+		selectRow(id(fieldLookingFor), l.T("draft.looking_ph"), maxSelectValues, b.lookingForOptions(d.LookingFor, l)))
+	if d.Abyss {
+		comps = append(comps,
+			text(l.T("draft.size")),
+			selectRow(id(fieldSize), l.T("draft.size_ph"), 1, sizeOptions(d.Size, 1, l)))
+	} else {
+		comps = append(comps,
+			text(l.T("draft.missing")),
+			selectRow(id(fieldMissing), l.T("draft.missing_ph"), 1, missingOptions(b.draftMaxMissing(d), d.Missing, l)))
+	}
+	comps = append(comps,
 		text(l.T("draft.plays")),
-		selectRow(draftID(fieldPlays), l.T("draft.plays_ph"), 1,
+		selectRow(id(fieldPlays), l.T("draft.plays_ph"), 1,
 			b.choiceOptions(b.game.Choices([]string{config.AnyID}), profileChoice(lfg.Profile{ClassID: d.Class, RoleID: d.Role}))),
 		divider(),
 	)
 
-	comps = append(comps, text(detailsSummary(d.MinGS, b.gameMinGS(d), d.StartAt, "", d.Note, l)))
+	start := startText(d.StartAt, "", l)
+	if d.Abyss && d.StartAt.IsZero() {
+		start = l.T("card.abyss_start_default")
+	}
+	comps = append(comps, text(detailsSummary(d.MinGS, b.gameMinGS(d), start, d.Note, l)))
 	if d.Problem != "" {
 		comps = append(comps, text("⚠️ "+l.T(d.Problem)))
 	}
 
 	comps = append(comps, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-		discordgo.Button{CustomID: draftID(fieldDetails), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
+		discordgo.Button{CustomID: id(fieldDetails), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
 			Emoji: emoji("✏️")},
-		discordgo.Button{CustomID: draftID(fieldPost), Label: l.T("draft.post"), Style: discordgo.SuccessButton,
+		discordgo.Button{CustomID: id(fieldPost), Label: l.T("draft.post"), Style: discordgo.SuccessButton,
 			Emoji: emoji("📣"), Disabled: !chosen || len(d.LookingFor) == 0},
-		discordgo.Button{CustomID: draftID(fieldCancel), Label: l.T("draft.cancel"), Style: discordgo.SecondaryButton},
+		discordgo.Button{CustomID: id(fieldCancel), Label: l.T("draft.cancel"), Style: discordgo.SecondaryButton},
 	}})
 	return container(colorOpen, comps...)
 }
 
+// sizeOptions offers the group sizes of a rally: no limit, then every
+// size that holds at least least players.
+func sizeOptions(selected, least int, l i18n.Lang) []discordgo.SelectMenuOption {
+	opts := []discordgo.SelectMenuOption{{Label: l.T("draft.size_none"), Value: "0",
+		Description: l.T("draft.size_none_desc"), Emoji: emoji("👥"), Default: selected == 0}}
+	for _, n := range rallySizes {
+		if n > 0 && n >= least {
+			opts = append(opts, discordgo.SelectMenuOption{Label: l.N(n, "n.player"), Value: strconv.Itoa(n), Default: n == selected})
+		}
+	}
+	return opts
+}
+
 func (b *Bot) detailsModal(d draft, l i18n.Lang) modal {
-	return detailsForm(draftID(fieldDetails), b.gameMinGS(d), d.MinGS, d.StartInput, d.zone(), d.Note, l)
+	return detailsForm(draftID(fieldDetails, d.Abyss), b.gameMinGS(d), d.MinGS, d.StartInput, d.zone(), d.Note, l)
 }
 
 // editModal is the same form for a post that is already up, filled in
@@ -376,8 +435,9 @@ func startInput(at time.Time, zone *time.Location) string {
 	return at.In(zone).Format("02.01.2006 15:04")
 }
 
-// detailsSummary is the gear score, start and note of a draft or a post.
-func detailsSummary(minGS, gameGS int, startAt time.Time, legacyStart, note string, l i18n.Lang) string {
+// detailsSummary is the gear score, start and note of a draft or a post;
+// start is already written out.
+func detailsSummary(minGS, gameGS int, start, note string, l i18n.Lang) string {
 	gs := l.T("draft.gs_none")
 	if minGS > 0 {
 		gs = l.GS(minGS) + "+"
@@ -385,7 +445,7 @@ func detailsSummary(minGS, gameGS int, startAt time.Time, legacyStart, note stri
 	if gameGS > 0 {
 		gs += l.T("draft.gs_game", l.GS(gameGS))
 	}
-	return l.T("draft.summary", gs, startText(startAt, legacyStart, l), orDefault(escape(truncate(note, 120)), l.T("draft.no_note")))
+	return l.T("draft.summary", gs, start, orDefault(escape(truncate(note, 120)), l.T("draft.no_note")))
 }
 
 // joinModal asks a player for their class, the role they fill with it, and
@@ -398,7 +458,7 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 		gs = strconv.Itoa(prof.GS)
 	}
 	required := p.MinGS > 0
-	gsHelp := l.T("join.gs_optional")
+	gsHelp := l.T(textFor("join.gs_optional", p.Rally))
 	if required {
 		gsHelp = l.T("join.gs_required", l.GS(p.MinGS))
 	}
@@ -434,18 +494,20 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 	if line := difficultyLine(dungeon, p.ModeID, 0, l); line != "" {
 		head += line + "\n"
 	}
-	switch p.Status {
-	case lfg.StatusOpen:
+	switch {
+	case p.Status == lfg.StatusOpen && p.Rally:
+		head += b.statusLine(p, l)
+	case p.Status == lfg.StatusOpen:
 		head += l.T("manage.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
-	case lfg.StatusFull:
-		head += l.T("manage.full")
+	case p.Status == lfg.StatusFull:
+		head += l.T(textFor("manage.full", p.Rally))
 	default:
 		head += l.T("manage.ended")
 	}
 
 	deleteButton := discordgo.Button{CustomID: customID(actDelete, p.ID), Label: l.T("manage.delete"),
 		Style: discordgo.DangerButton, Emoji: emoji("🗑️")}
-	comps := []discordgo.MessageComponent{text(head), text(detailsSummary(p.MinGS, 0, p.StartAt, p.Start, p.Note, l)),
+	comps := []discordgo.MessageComponent{text(head), text(detailsSummary(p.MinGS, 0, postStart(p, l), p.Note, l)),
 		divider(), text(b.rosterText(p, "", true, l))}
 	if !p.Active() {
 		comps = append(comps,
@@ -456,6 +518,9 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 			}},
 			text(l.T("manage.disappears", p.ClosedAt.Add(keepEndedPosts).Unix())+"\n"+l.T("manage.ended_reopen")))
 		return container(statusColor(p.Status), comps...)
+	}
+	if p.Rally {
+		return container(statusColor(p.Status), append(comps, b.rallyControls(p, deleteButton, l)...)...)
 	}
 
 	if waiting := p.Waiting(); len(waiting) > 0 && p.Missing > 0 {
@@ -487,6 +552,33 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 	return container(statusColor(p.Status), comps...)
 }
 
+// rallyControls are the leader's controls for an open rally: remove
+// players, change the group size, and the buttons. Nobody waits to be
+// accepted, as players join straight in.
+func (b *Bot) rallyControls(p lfg.Post, deleteButton discordgo.Button, l i18n.Lang) []discordgo.MessageComponent {
+	var comps []discordgo.MessageComponent
+	// The menu holds 25 players. In a bigger rally it offers the latest to
+	// join, the likeliest to be removed.
+	if all := slices.Concat(p.Accepted, p.Reserves); len(all) > 0 {
+		all = all[max(0, len(all)-maxSelectValues):]
+		comps = append(comps, selectRow(customID(actKick, p.ID), l.T("manage.abyss_kick_ph"), len(all), b.playerOptions(p, all, l)))
+	}
+	return append(comps,
+		text(l.T("draft.size")),
+		selectRow(customID(actSize, p.ID), l.T("draft.size_ph"), 1, sizeOptions(p.Size, len(p.Party()), l)),
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{CustomID: customID(actEdit, p.ID), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
+				Emoji: emoji("✏️")},
+			discordgo.Button{CustomID: customID(actMove, p.ID), Label: l.T("manage.abyss_move"), Style: discordgo.SecondaryButton,
+				Emoji: emoji("🗺️")},
+			discordgo.Button{CustomID: customID(actClose, p.ID), Label: l.T("manage.close"), Style: discordgo.SecondaryButton,
+				Emoji: emoji("🔒")},
+			deleteButton,
+		}},
+		text(l.T("manage.abyss_footer")),
+	)
+}
+
 // confirmDelete asks the leader before a post disappears everywhere.
 func (b *Bot) confirmDelete(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
@@ -502,26 +594,30 @@ func (b *Bot) confirmDelete(p lfg.Post, l i18n.Lang) discordgo.MessageComponent 
 // movePanel lets the leader take the post, with everyone on it, to
 // another dungeon or mode. The pick travels in the custom IDs until the
 // leader confirms it, so nothing is kept in memory.
+//
+// A rally moves among the Abyss events only, and a dungeon post among the
+// dungeons.
 func (b *Bot) movePanel(p lfg.Post, dungeonID, modeID string, l i18n.Lang) discordgo.MessageComponent {
+	key := func(k string) string { return l.T(textFor(k, p.Rally)) }
 	to, chosen := b.game.Dungeon(dungeonID)
-	if !chosen {
+	if chosen = chosen && to.Abyss == p.Rally; !chosen {
 		dungeonID, modeID = "", ""
 	} else if _, ok := to.Mode(modeID); !ok {
 		modeID = firstMode(to)
 	}
 
 	comps := []discordgo.MessageComponent{
-		text(l.T("move.title") + "\n" + l.T("move.help", b.runName(p))),
-		text(l.T("draft.dungeon")),
-		selectRow(customID(actMoveTo, p.ID), l.T("draft.dungeon_ph"), 1, b.dungeonOptions(dungeonID, l)),
+		text(key("move.title") + "\n" + l.T(textFor("move.help", p.Rally), b.runName(p))),
+		text(key("draft.dungeon")),
+		selectRow(customID(actMoveTo, p.ID), key("draft.dungeon_ph"), 1, b.dungeonOptions(b.game.Content(p.Rally), dungeonID, l)),
 	}
 	if chosen && len(to.Modes) > 0 {
 		comps = append(comps,
-			text(l.T("draft.mode")),
-			selectRow(customID(actMoveMode, p.ID+":"+dungeonID), l.T("draft.mode_ph"), 1, modeOptions(to, modeID, l)))
+			text(key("draft.mode")),
+			selectRow(customID(actMoveMode, p.ID+":"+dungeonID), key("draft.mode_ph"), 1, modeOptions(to, modeID, l)))
 	}
 
-	confirm := discordgo.Button{CustomID: customID(actMoveYes, p.ID+":"+dungeonID+":"+modeID), Label: l.T("move.yes"),
+	confirm := discordgo.Button{CustomID: customID(actMoveYes, p.ID+":"+dungeonID+":"+modeID), Label: key("move.yes"),
 		Style: discordgo.SuccessButton, Emoji: emoji("✅")}
 	moved := p
 	fromSize := b.game.DungeonOrUnknown(p.DungeonID).PartySizeFor(p.ModeID)
@@ -558,10 +654,10 @@ func firstMode(d config.Dungeon) string {
 
 // dungeonOptions describes each dungeon as "Expedition · 5 players ·
 // GS 700–2,600": its type from the config, then the party size and gear
-// score range in the reader's language.
-func (b *Bot) dungeonOptions(selected string, l i18n.Lang) []discordgo.SelectMenuOption {
-	opts := make([]discordgo.SelectMenuOption, 0, len(b.game.Dungeons))
-	for _, d := range b.game.Dungeons {
+// score range in the reader's language. Abyss events have no party size.
+func (b *Bot) dungeonOptions(dungeons []config.Dungeon, selected string, l i18n.Lang) []discordgo.SelectMenuOption {
+	opts := make([]discordgo.SelectMenuOption, 0, len(dungeons))
+	for _, d := range dungeons {
 		var desc []string
 		if d.Description != "" {
 			desc = append(desc, d.Description)

@@ -31,6 +31,7 @@ var cs = map[string]string{
 
 	// Slash command descriptions.
 	"cmd.lfg":                   "Zveřejni na všech propojených serverech, že vaší partě chybí hráči",
+	"cmd.abyss":                 "Svolej hráče na událost v Abyssu nebo invazi, na všech propojených serverech",
 	"cmd.setup":                 "Nastav kanál, kde se na tomto serveru objevují nábory",
 	"cmd.setup.channel":         "Kanál pro nábory",
 	"cmd.setup.ping_role":       "Role, která se označí u nového náboru",
@@ -53,7 +54,7 @@ var cs = map[string]string{
 	"cmd.help_public":           "Zveřejni návod v tomto kanálu pro všechny",
 	"cmd.legend":                "Ukáže, co znamenají ikony rolí, povolání a další u náborů (vidíš jen ty)",
 	"cmd.find":                  "Ukaž otevřené nábory, do kterých se s tvým povoláním a GS dostaneš",
-	"cmd.find.dungeon":          "Jen nábory do tohoto dungeonu nebo raidu",
+	"cmd.find.dungeon":          "Jen nábory do tohoto dungeonu, raidu nebo události v Abyssu",
 	"cmd.notify":                "Dostávej zprávu, když nový nábor hledá to, co hraješ",
 	"cmd.stats":                 "Ukaž, kolik náborů vzniklo a naplnilo se a které dungeony jsou nejoblíbenější",
 	"cmd.stats.days":            "Období (výchozí: posledních 7 dní)",
@@ -81,6 +82,12 @@ var cs = map[string]string{
 	"any.name":              "Libovolné povolání",
 	"any.desc":              "Vítán je kdokoli",
 
+	// An Abyss rally's post, where it differs.
+	"card.abyss_looking":       "**👥 Přihlášeno: %d**%s — %s",
+	"card.abyss_full":          "**✅ Skupina je plná**",
+	"card.abyss_start_default": "hned",
+	"roster.abyss_in_party":    "**✅ Přihlášení (%d)**",
+
 	// The /lfg panel.
 	"draft.title":         "### 📣 Hledání spoluhráčů\nVyplň nabídky a stiskni **Zveřejnit**. Nábor se objeví na všech propojených serverech.",
 	"draft.dungeon":       "-# Dungeon nebo raid",
@@ -100,8 +107,8 @@ var cs = map[string]string{
 	"draft.details":       "GS, čas a poznámka",
 	"draft.post":          "Zveřejnit",
 	"draft.cancel":        "Zrušit",
-	"draft.expired":       "Formulář vypršel. Spusť `/lfg` znovu.",
-	"draft.cancelled":     "Zrušeno. Až budeš chtít začít znovu, spusť `/lfg`.",
+	"draft.expired":       "Formulář vypršel. Spusť %s znovu.",
+	"draft.cancelled":     "Zrušeno. Až budeš chtít začít znovu, spusť %s.",
 	"draft.bad_gs":        "GS musí být číslo, např. 3000 nebo 3,2k.",
 	"draft.need_dungeon":  "Nejdřív vyber dungeon nebo raid.",
 	"draft.need_looking":  "Vyber, koho hledáte: roli, povolání, nebo Libovolné povolání.",
@@ -111,6 +118,19 @@ var cs = map[string]string{
 	"draft.unreachable":   "\n-# Nedostupné: %s.",
 	"draft.nowhere":       "Z tohoto serveru zatím není kam psát. Správce musí spustit `/lfg-setup`, nebo server propojit s dalšími přes `/lfg-network`.",
 	"draft.too_many":      "Otevřené nábory: %s — víc jich mít nemůžeš. Jeden uzavři a pak založ nový:%s",
+
+	// The /lfg-abyss panel, where it differs.
+	"draft.abyss_title":        "### 🏰 Svolání do Abyssu\nVyber událost a stiskni **Zveřejnit**. Hráči se přidávají rovnou, na všech propojených serverech.",
+	"draft.abyss_dungeon":      "-# Událost v Abyssu nebo invaze",
+	"draft.abyss_dungeon_ph":   "Kam se jde?",
+	"draft.abyss_mode":         "-# Oblast",
+	"draft.abyss_mode_ph":      "Vyber oblast",
+	"draft.size":               "-# Velikost skupiny, včetně tebe",
+	"draft.size_ph":            "Kolik hráčů nejvýš?",
+	"draft.size_none":          "Bez omezení",
+	"draft.size_none_desc":     "Přidat se může každý, kdo odpovídá",
+	"draft.abyss_need_dungeon": "Nejdřív vyber událost v Abyssu.",
+	"draft.abyss_live":         "### ✅ Svolání je venku na %s\nHráči se přidávají rovnou, bez čekání na tebe. Až se přidá první, dostaneš zmínku ve vláknu pod náborem. **Spravovat** odebírá hráče a mění velikost skupiny.",
 
 	// Gear score, time & note form.
 	"details.title":   "GS, čas a poznámka",
@@ -122,22 +142,25 @@ var cs = map[string]string{
 	"details.note_ph": "Zkušenosti, voice chat, pravidla lootu…",
 
 	// Joining.
-	"join.title":         "Přidat se: %s",
-	"join.choice":        "Tvoje role a povolání",
-	"join.looking":       "Hledáme: %s",
-	"join.choice_ph":     "S čím jdeš?",
-	"join.gs":            "Tvoje GS",
-	"join.gs_optional":   "Nepovinné, ale vedoucímu to pomůže s výběrem.",
-	"join.gs_required":   "Tahle parta vyžaduje GS %s nebo víc.",
-	"join.gs_ph":         "např. 3150",
-	"join.class_gone":    "Tuhle roli nebo povolání už nábor nepotřebuje.",
-	"join.bad_gs":        "GS musí být číslo, např. 3150. Zkus to znovu přes **Přidat se**.",
-	"join.gs_low":        "Tahle parta vyžaduje GS **%s** nebo víc, ty máš %s. Sleduj další nábory!",
-	"join.done":          "✅ Jsi na seznamu pro **%s** jako %s.\nAž tě **%s** přijme, dostaneš zmínku.",
-	"join.title_reserve": "Náhradník: %s",
-	"join.reserve":       "🪑 Parta je plná, takže jsi **%[3]d. náhradník** pro **%[1]s** jako %[2]s.\nKdyž odejde hráč s tvou rolí, automaticky se posuneš do party a dostaneš zmínku.",
-	"leave.leader":       "Jsi vedoucí tohoto náboru. Uzavři ho přes ⚙️ **Spravovat**.",
-	"leave.done":         "Už nejsi v náboru **%s**.",
+	"join.title":             "Přidat se: %s",
+	"join.choice":            "Tvoje role a povolání",
+	"join.looking":           "Hledáme: %s",
+	"join.choice_ph":         "S čím jdeš?",
+	"join.gs":                "Tvoje GS",
+	"join.gs_optional":       "Nepovinné, ale vedoucímu to pomůže s výběrem.",
+	"join.gs_required":       "Tahle parta vyžaduje GS %s nebo víc.",
+	"join.gs_ph":             "např. 3150",
+	"join.class_gone":        "Tuhle roli nebo povolání už nábor nepotřebuje.",
+	"join.bad_gs":            "GS musí být číslo, např. 3150. Zkus to znovu přes **Přidat se**.",
+	"join.gs_low":            "Tahle parta vyžaduje GS **%s** nebo víc, ty máš %s. Sleduj další nábory!",
+	"join.done":              "✅ Jsi na seznamu pro **%s** jako %s.\nAž tě **%s** přijme, dostaneš zmínku.",
+	"join.title_reserve":     "Náhradník: %s",
+	"join.reserve":           "🪑 Parta je plná, takže jsi **%[3]d. náhradník** pro **%[1]s** jako %[2]s.\nKdyž odejde hráč s tvou rolí, automaticky se posuneš do party a dostaneš zmínku.",
+	"join.abyss_gs_optional": "Nepovinné. Ukáže se u tvého jména v náboru.",
+	"join.abyss_done":        "✅ Jdeš na **%s** jako %s, vede **%s**.\nDomluva probíhá ve vláknu pod náborem, kam tě bot přidal.",
+	"join.abyss_reserve":     "🪑 Skupina je plná, takže jsi **%[3]d. náhradník** pro **%[1]s** jako %[2]s.\nJakmile se uvolní místo, posuneš se a dostaneš zmínku.",
+	"leave.leader":           "Jsi vedoucí tohoto náboru. Uzavři ho přes ⚙️ **Spravovat**.",
+	"leave.done":             "Už nejsi v náboru **%s**.",
 
 	// Notes in the thread under a post.
 	"thread.join_title":     "### ✋ Nový hráč",
@@ -165,6 +188,21 @@ var cs = map[string]string{
 	"thread.gs":             "📈 **Min. GS:** %s",
 	"thread.gs_none":        "žádné",
 	"thread.note":           "📝 **Poznámka:** %s",
+
+	"thread.abyss_join":         "%s, do tvého svolání %s se přidal první hráč:",
+	"thread.abyss_join_hint":    "Hráči se přidávají bez čekání na tebe. Odebrat je nebo změnit velikost skupiny můžeš přes ⚙️ **Spravovat** u náboru.",
+	"thread.abyss_reserve":      "%s, do tvého svolání %s se zapsal náhradník:",
+	"thread.abyss_reserve_hint": "Posune se, jakmile se uvolní místo nebo zvětšíš skupinu přes ⚙️ **Spravovat**.",
+	"thread.abyss_moved_title":  "### 🗺️ Změna události",
+	"dm.abyss_leader":           "### ✋ První hráč pro tvé svolání %s\n%s se přidal.",
+	"manage.abyss_full":         "✅ Skupina je plná — noví hráči se zapisují jako náhradníci a posouvají se podle pořadí, když se uvolní místo nebo skupinu zvětšíš.",
+	"manage.abyss_kick_ph":      "❌ Odebrat hráče…",
+	"manage.abyss_move":         "Změnit událost",
+	"manage.abyss_footer":       "-# Hráči se přidávají bez čekání na tebe, zmínku dostaneš jen u prvního. ✏️ kdykoli změní GS, začátek a poznámku, 🗺️ událost. **Uzavřít** nechá nábor viditelný 24 hodin a dá se znovu otevřít, **Smazat** ho hned odstraní ze všech serverů.",
+	"move.abyss_title":          "### 🗺️ Změna události",
+	"move.abyss_help":           "Teď: %s. Všichni z náboru jdou s ním a velikost skupiny zůstává.",
+	"move.abyss_yes":            "Změnit událost",
+	"find.abyss_option_missing": "přihlášeno %d",
 
 	// DMs, when a ping can't go to a thread.
 	"ping.leader_char": "🎮 Vedoucí hraje ve hře za %s.",
@@ -297,7 +335,7 @@ var cs = map[string]string{
 
 	// /lfg-notify.
 	"alert.title":       "### 🔔 Upozornění na nové nábory\nNapíšu ti do soukromých zpráv, když nový nábor hledá to, co hraješ. Každá změna se hned uloží.",
-	"alert.dungeons":    "-# Dungeony a raidy",
+	"alert.dungeons":    "-# Dungeony, raidy a události v Abyssu",
 	"alert.dungeons_ph": "O kterých náborech chceš vědět?",
 	"alert.as":          "-# Co hraješ — jedno nebo víc",
 	"alert.as_ph":       "Tvoje role a povolání",
@@ -343,6 +381,7 @@ var cs = map[string]string{
 	"help.title":  "## 📖 AION 2 – hledání party",
 	"help.find":   "### 🔎 Najdi partu\n• %s ukáže otevřené nábory, do kterých se s tvým povoláním a GS dostaneš; vyber jeden a přidej se. %s ti napíše, až se objeví nový.\n• Nebo sleduj LFG kanál: objevují se tam nábory z tohoto serveru i z propojených serverů.\n• Klikni na **✋ Přidat se**, vyber roli a povolání a zadej své GS a jméno postavy. Bot tě přidá do vlákna pod náborem.\n• Parta už je plná? **🪑 Přidat se jako náhradník**: když odejde hráč s tvou rolí, automaticky se posuneš.\n• V tom vláknu se domluvíš s vedoucím a partou: co tam napíšeš, uvidí i vlákno na všech propojených serverech.\n• Až tě vedoucí přijme, dostaneš ve vláknu jednu zmínku a %s před plánovaným začátkem připomínku. Napiš vedoucímu o pozvánku ve hře.\n• Už nechceš? Klikni u náboru na **Odejít**.\n• %s uloží tvou hlavní roli, povolání, jméno postavy a GS, takže se ti formulář předvyplní. Vypneš tam i připomínky.",
 	"help.post":   "### 📣 Založ nábor\n• %s otevře soukromý panel: dungeon nebo raid, obtížnost, koho hledáte (%s, konkrétní povolání nebo Libovolné povolání), kolik hráčů chybí a za co hraješ.\n• Nepovinně: minimální GS, začátek a poznámka.\n• **Zveřejnit** pošle nábor na všechny propojené servery. Až se přidá první hráč, dostaneš jednu zmínku ve vláknu pod náborem.\n• **⚙️ Spravovat** u náboru: přijímej nebo odmítej hráče i náhradníky, měň GS, začátek a poznámku (✏️), uprav počet chybějících (−1/+1), přesuň partu do jiného dungeonu (🗺️), **🔒 Uzavři** nebo **🗑️ Smaž** nábor a do 24 hodin od uzavření ho můžeš **🔓 Znovu otevřít**.\n• Vlákno pod náborem vzniká hned s ním, takže se tě v něm hráči můžou na cokoli zeptat. Je sdílené: ty i všichni přihlášení v něm jste na každém propojeném serveru, kde jste členy, a zprávy se dostanou všude.\n• Otevřených náborů můžeš mít až %d. Nábory platí %s a 24 hodin po skončení zmizí.\n• %s ukáže, kolik náborů vzniklo a naplnilo se a které dungeony jsou nejoblíbenější.",
+	"help.abyss":  "### 🏰 Události v Abyssu\n• %s svolá hráče na %s. Přidávají se rovnou, bez čekání na tebe, až do velikosti skupiny, kterou zvolíš, nebo bez omezení.\n• Když je skupina plná, noví hráči se zapisují jako náhradníci a podle pořadí se posouvají, jakmile se uvolní místo.\n• **⚙️ Spravovat** odebírá hráče a mění velikost skupiny. Zbytek funguje jako u každého náboru: vlákno, GS, začátek a poznámka, připomínky, **🔒 Uzavřít** a **🔓 Znovu otevřít**.",
 	"help.admin":  "### 🛠️ Pro správce serveru\n• %s nastaví LFG kanál, roli k označení a jazyk a zkontroluje oprávnění bota.\n• %s kdykoli zkontroluje oprávnění, roli k označení a propojení serveru.\n• %s založí síť a dá kód pro připojení; ostatní servery se připojí přes %s a sdílí nábory. %s ukáže propojené servery.\n• %s vypne příjem náborů tady; %s zveřejní tento návod pro všechny.",
 	"help.footer": "-# %s ukáže tento návod jen tobě, %s co znamenají ikony.",
 
@@ -351,7 +390,7 @@ var cs = map[string]string{
 	"legend.roles":   "### Role\n",
 	"legend.classes": "### Povolání",
 	"legend.backup":  "\n-# %s přihlášený jako %s se ukáže jako %s, jakmile tu roli v partě plní jiné povolání.",
-	"legend.post":    "### U náboru\n%s Vedoucí party\n✅ V partě · parta je plná\n⏳ Čekají, až je vedoucí přijme\n🪑 Náhradníci: posunou se, když odejde hráč s jejich rolí\n🕒 Začátek, ve tvém časovém pásmu\n🔒 Uzavřel vedoucí · ⌛ Vypršelo\n`Jméno` Jméno postavy ve hře, ke zkopírování pro pozvánku",
+	"legend.post":    "### U náboru\n%s Vedoucí party\n✅ V partě · parta je plná\n⏳ Čekají, až je vedoucí přijme\n🪑 Náhradníci: posunou se, když odejde hráč s jejich rolí\n🕒 Začátek, ve tvém časovém pásmu\n🔒 Uzavřel vedoucí · ⌛ Vypršelo\n👥 Svolání do Abyssu: kolik hráčů jde a velikost skupiny\n`Jméno` Jméno postavy ve hře, ke zkopírování pro pozvánku",
 
 	"details.start":      "Začátek (datum a čas)",
 	"details.start_help": "např. 21.09.2026 10:15 nebo 10:15 · pásmo %s (/profile)",

@@ -3,6 +3,7 @@
 A Discord bot (Go, [discordgo](https://github.com/bwmarrin/discordgo)) for AION 2 (global) players who are short on party members.
 A leader fills in a short panel, and the post appears in the LFG channel of **every server linked with theirs**.
 Players join from whichever server they're on, and all copies of the post stay in sync.
+For Abyss events and invasions, `/lfg-abyss` posts an open rally that players join straight away.
 
 It uses Discord's new components:
 
@@ -27,6 +28,17 @@ It uses Discord's new components:
      A run planned for later expires `post_ttl_hours` after its start, not after it was posted.
    - **Post** sends it to every linked server. New posts ping each server's ping role.
    A player can have up to `max_runs_per_leader` open runs at once.
+   **Abyss events and invasions.** `/lfg-abyss` opens the same panel for a **rally**: the Abyss event (Artifact Siege, Abyss Boss, Dimensional Invasion,
+   Rift Invasion, Abyss Farm) and its zone, who you need (*Any class* until you pick otherwise), the **group size** counting you
+   (5 to 100 players, or *No limit*), what you play, and the gear score, time & note. Without a start time, the rally gathers right away.
+   - Players **join straight in**, with no one to accept them: the card counts who's going (`👥 12 going (12/20)`) and lists them by role.
+     The leader is pinged once, for the first player, like on any run.
+   - Once a rally with a size is full, new players join as reserves and move up in the order they came, whatever their role,
+     when a spot opens or the leader raises the size.
+   - **Manage** removes players (the latest 25 to join, in a bigger rally), changes the group size, the gear score, start and note,
+     or the event (🗺️, among the Abyss events only), and closes, deletes or reopens the post.
+   - The reminder before a planned start mentions everyone in the rally by name, 50 to a message, as the roster on a big rally can't list them all.
+   - Rallies count towards `max_runs_per_leader`, show up in `/lfg-find`, `/lfg-notify` and `/lfg-stats`, and get a thread like any run.
 4. **Find.** Players watch the LFG channel, or run `/lfg-find`: it lists the open runs on the linked servers that their class and gear score
    from `/profile` fit, soonest start first, with a menu to join one. `/lfg-notify` sends them a DM with a link when a new post fits:
    they pick the dungeons and what they play (one or more role and class pairs), and runs their profile GS is too low for are skipped.
@@ -61,6 +73,7 @@ It uses Discord's new components:
    The bot can delete threads it started; if Discord ever refuses, it deletes its pings and archives the thread instead.
 9. **Stats.** `/lfg-stats` shows the last 24 hours, 7 or 30 days of the server and its network: runs posted and open, how many filled and how fast,
    the players on them, the most popular dungeons and the busiest servers. Ended runs are kept for this for 90 days.
+   Rallies without a size never fill, so they don't count towards how many runs did.
 
 ## Languages
 
@@ -116,7 +129,8 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | Command | Who | What it does |
 |---|---|---|
 | `/lfg` | everyone | Opens the panel to post a run to all linked servers |
-| `/lfg-find [dungeon]` | everyone | Lists the open runs you can join with your class and gear score, with a menu to join one |
+| `/lfg-abyss` | everyone | Opens the panel to gather players for an Abyss event or invasion: an open rally, with or without a size limit |
+| `/lfg-find [dungeon]` | everyone | Lists the open runs (dungeons and Abyss rallies) you can join with your class and gear score, with a menu to join one |
 | `/lfg-notify` | everyone | Sets up a DM for new runs: the dungeons you want and what you play |
 | `/lfg-stats [days]` | everyone | Shows runs posted and filled, the most popular dungeons and the busiest servers of the network |
 | `/profile` | everyone | Saves your main role, class, character name, gear score, time zone and whether you want reminders |
@@ -152,6 +166,12 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
         // a mode can set its own "party_size" if it differs from the dungeon's
       ] }
   ],
+  "abyss": [                  // Abyss events and invasions for /lfg-abyss, optional
+    { "id": "artifact-siege", "name": "Artifact Siege", "emoji": "🏰", "description": "Abyss siege",
+      "modes": [                                // zones, optional
+        { "id": "lower-reshanta", "name": "Lower Reshanta" }
+      ] }                                       // no party_size: the leader picks the group size
+  ],
   "roles": [                  // roles leaders can look for; the emoji marks players on the post,
     { "id": "tank", "name": "Tank", "emoji": "🟦" }    // whose party is sorted in this order
   ],
@@ -170,6 +190,11 @@ The list covers what is live on the **global** version as of 31 October 2026:
 - **Sanctuary raid (10 players):** Abyssal Forge: Ludra. Normal (GS 2,800) / Hard (GS 3,000), both open from 4 November.
 
 Content only in the client files (Chalice of Muspel, Corroded Decontamination Facility, other hard modes) is left out; add it when it opens on global.
+
+The Abyss events are Artifact Siege and Abyss Farm, each in Lower or Middle Reshanta, the Abyss Boss, Dimensional Invasion (enemies invading your territory)
+and Rift Invasion (going through a rift into the enemy's). Rename them or add others to match the global client.
+Dungeons and Abyss events share their `id`s, as a post names either by its `id` alone, and are at most 25 together: `/lfg-notify` and `/lfg-find` offer them in one menu.
+Without an `abyss` list, `/lfg-abyss` isn't registered.
 Class roles: Templar tanks, Gladiator tanks or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.
 A Chanter who joins as a healer shows as DPS once a Cleric is accepted into the party, since the Cleric does the healing then; it shows as a healer again if the Cleric leaves.
 A Cleric who has only applied doesn't count. Generally, a class's `backup_roles` show as its first other role while an accepted player of another class fills them.
@@ -202,7 +227,7 @@ Dockerfile          the release image; compose.yaml runs it
 internal/config     game.json and .env loading, role/class matching
 internal/emoji      role, class, leader and interface icons, uploaded as application emojis
 tools/icons         draws the interface icons
-internal/lfg        post rules and reserves, SQLite storage, networks, profiles, alerts, run history
+internal/lfg        post rules, reserves and rallies, SQLite storage, networks, profiles, alerts, run history
 internal/bot        commands, panels, forms, cross-server sync, shared threads, reminders, alerts, search, stats, cleanup
 ```
 

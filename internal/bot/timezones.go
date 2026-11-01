@@ -12,6 +12,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"aion2bot/internal/i18n"
+	"aion2bot/internal/lfg"
 )
 
 // timeZones are offered in /profile. Each stands for a region sharing one
@@ -149,6 +150,15 @@ func parseStart(s string, loc *time.Location, now time.Time) (time.Time, error) 
 		return time.Time{}, errBadStart
 	}
 	return t, nil
+}
+
+// postStart is the start of a post as startText shows it. A rally without
+// one gathers right away rather than once the party is full.
+func postStart(p lfg.Post, l i18n.Lang) string {
+	if p.Rally && p.StartAt.IsZero() && p.Start == "" {
+		return l.T("card.abyss_start_default")
+	}
+	return startText(p.StartAt, p.Start, l)
 }
 
 // startText shows a start time as a Discord timestamp, which every reader

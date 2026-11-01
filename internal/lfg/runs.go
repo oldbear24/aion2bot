@@ -20,21 +20,24 @@ type Run struct {
 	// Players is how many players were on the post when it ended, or are
 	// on it now.
 	Players int
+	// Unlimited marks a rally without a size, which never fills.
+	Unlimited bool
 }
 
 func runOf(p *Post) Run {
 	return Run{
 		GuildID: p.GuildID, DungeonID: p.DungeonID, ModeID: p.ModeID, Status: p.Status,
 		CreatedAt: p.CreatedAt, FilledAt: p.FilledAt, Players: len(p.Accepted) + len(p.Applicants) + len(p.Reserves),
+		Unlimited: p.Rally && p.Size == 0,
 	}
 }
 
 // recordRun keeps an ended post for the stats.
 func recordRun(tx *sql.Tx, p *Post) error {
 	r := runOf(p)
-	_, err := tx.Exec(`INSERT OR REPLACE INTO runs (post_id, guild_id, dungeon_id, mode_id, status, created_at, filled_at, players)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, r.GuildID, r.DungeonID, r.ModeID, r.Status, millis(r.CreatedAt), millis(r.FilledAt), r.Players)
+	_, err := tx.Exec(`INSERT OR REPLACE INTO runs (post_id, guild_id, dungeon_id, mode_id, status, created_at, filled_at, players,
+		unlimited) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, r.GuildID, r.DungeonID, r.ModeID, r.Status, millis(r.CreatedAt), millis(r.FilledAt), r.Players, r.Unlimited)
 	return err
 }
 
@@ -51,7 +54,7 @@ func (s *Store) Runs(guildIDs []string, since time.Time) []Run {
 	}
 	args = append(args, millis(since))
 
-	out, err := s.endedRuns(`SELECT guild_id, dungeon_id, mode_id, status, created_at, filled_at, players FROM runs
+	out, err := s.endedRuns(`SELECT guild_id, dungeon_id, mode_id, status, created_at, filled_at, players, unlimited FROM runs
 		WHERE guild_id IN `+in+` AND created_at >= ?`, args...)
 	if err != nil {
 		log.Printf("store: list runs: %v", err)
@@ -76,7 +79,7 @@ func (s *Store) endedRuns(query string, args ...any) ([]Run, error) {
 	for rows.Next() {
 		var r Run
 		var created, filled int64
-		if err := rows.Scan(&r.GuildID, &r.DungeonID, &r.ModeID, &r.Status, &created, &filled, &r.Players); err != nil {
+		if err := rows.Scan(&r.GuildID, &r.DungeonID, &r.ModeID, &r.Status, &created, &filled, &r.Players, &r.Unlimited); err != nil {
 			return nil, err
 		}
 		r.CreatedAt, r.FilledAt = fromMillis(created), fromMillis(filled)

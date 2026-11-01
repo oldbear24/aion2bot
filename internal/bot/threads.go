@@ -53,7 +53,8 @@ func (b *Bot) thread(p lfg.Post, ref lfg.MessageRef) (threadID string, started b
 // there: each user's home server only, so nobody is pinged twice;
 // elsewhere their mention is just a link. It returns the servers the note
 // reached, so the caller can fall back to a DM. Callers run learnMembers
-// first, as note and the thread members depend on it.
+// first, as note and the thread members depend on it. A server for which
+// note returns nil gets nothing.
 func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note func(guildID string, l i18n.Lang) discordgo.MessageComponent) map[string]bool {
 	langs := b.guildLangs()
 	var mu sync.Mutex
@@ -63,6 +64,10 @@ func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note f
 		if !ref.Thread && !start {
 			return
 		}
+		card := note(ref.GuildID, langs.of(ref.GuildID))
+		if card == nil {
+			return
+		}
 		threadID, fresh, err := b.thread(p, ref)
 		var id string
 		if err == nil {
@@ -70,7 +75,7 @@ func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note f
 			if users := pings[ref.GuildID]; len(users) > 0 {
 				mentions = &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}, Users: users}
 			}
-			id, err = b.send(threadID, []discordgo.MessageComponent{note(ref.GuildID, langs.of(ref.GuildID))}, mentions)
+			id, err = b.send(threadID, []discordgo.MessageComponent{card}, mentions)
 		}
 		if err != nil {
 			log.Printf("announce on post %s in guild %s: %v", p.ID, ref.GuildID, err)

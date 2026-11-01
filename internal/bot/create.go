@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,13 +19,19 @@ import (
 // Drafts are dropped after this long without a click.
 const draftTTL = time.Hour
 
-// draft is a post being filled in on the /lfg panel. Drafts live in memory
-// only; after a restart the panel asks the user to run /lfg again.
+// draft is a post being filled in on the /lfg or /lfg-abyss panel. Drafts
+// live in memory only; after a restart the panel asks the user to run the
+// command again.
 type draft struct {
+	// Abyss is set on the /lfg-abyss panel: the post is a rally to an
+	// Abyss event, with a group size instead of a missing count.
+	Abyss      bool
 	DungeonID  string
 	ModeID     string
 	LookingFor []string
 	Missing    int
+	// Size is a rally's group size, the leader included; zero is no limit.
+	Size int
 	// Class and Role are what the leader plays, from their profile until
 	// they pick something else.
 	Class string
@@ -49,10 +56,19 @@ func (d draft) zone() *time.Location {
 	return time.UTC
 }
 
-func (b *Bot) getDraft(userID string) (draft, bool) {
+// draftKey keeps a player's /lfg and /lfg-abyss drafts apart, so both
+// panels can be open at once.
+func draftKey(userID string, abyss bool) string {
+	if abyss {
+		return userID + ":abyss"
+	}
+	return userID
+}
+
+func (b *Bot) getDraft(userID string, abyss bool) (draft, bool) {
 	b.draftMu.Lock()
 	defer b.draftMu.Unlock()
-	d, ok := b.drafts[userID]
+	d, ok := b.drafts[draftKey(userID, abyss)]
 	if !ok {
 		return draft{}, false
 	}
@@ -63,13 +79,28 @@ func (b *Bot) putDraft(userID string, d draft) {
 	b.draftMu.Lock()
 	defer b.draftMu.Unlock()
 	d.touched = time.Now()
-	b.drafts[userID] = &d
+	b.drafts[draftKey(userID, d.Abyss)] = &d
 }
 
-func (b *Bot) dropDraft(userID string) {
+func (b *Bot) dropDraft(userID string, abyss bool) {
 	b.draftMu.Lock()
 	defer b.draftMu.Unlock()
-	delete(b.drafts, userID)
+	delete(b.drafts, draftKey(userID, abyss))
+}
+
+// draftCommand is the command that opens a draft's panel.
+func draftCommand(abyss bool) string {
+	if abyss {
+		return "lfg-abyss"
+	}
+	return "lfg"
+}
+
+// draftDungeon is the draft's dungeon, or its Abyss event on the
+// /lfg-abyss panel.
+func (b *Bot) draftDungeon(d draft) (config.Dungeon, bool) {
+	dungeon, ok := b.game.Dungeon(d.DungeonID)
+	return dungeon, ok && dungeon.Abyss == d.Abyss
 }
 
 func (b *Bot) dropStaleDrafts(now time.Time) {
@@ -82,10 +113,12 @@ func (b *Bot) dropStaleDrafts(now time.Time) {
 	}
 }
 
-// selectDungeon switches the draft to a dungeon, starting at its first mode.
+// selectDungeon switches the draft to a dungeon, starting at its first
+// mode. The /lfg-abyss panel takes only Abyss events, and /lfg only
+// dungeons.
 func (b *Bot) selectDungeon(d *draft, dungeonID string) {
 	dungeon, ok := b.game.Dungeon(dungeonID)
-	if !ok {
+	if !ok || dungeon.Abyss != d.Abyss {
 		return
 	}
 	d.DungeonID, d.ModeID = dungeon.ID, ""
@@ -96,7 +129,7 @@ func (b *Bot) selectDungeon(d *draft, dungeonID string) {
 }
 
 func (b *Bot) selectMode(d *draft, modeID string) {
-	dungeon, _ := b.game.Dungeon(d.DungeonID)
+	dungeon, _ := b.draftDungeon(*d)
 	if _, ok := dungeon.Mode(modeID); ok {
 		d.ModeID = modeID
 		b.applyMode(d)
@@ -123,8 +156,10 @@ func (b *Bot) gameMinGS(d draft) int {
 	return m.GS
 }
 
-// /lfg opens the create panel, in the leader's language.
-func (b *Bot) cmdLFG(i *discordgo.Interaction) error {
+// /lfg opens the create panel, in the leader's language; /lfg-abyss opens
+// it for a rally to an Abyss event, open to any class until the leader
+// says otherwise, and with no limit on its size.
+func (b *Bot) cmdLFG(i *discordgo.Interaction, abyss bool) error {
 	userID, _ := interactionUser(i)
 	l := lang(i)
 	if open := b.store.ActivePostsByLeader(userID); len(open) >= b.game.MaxRunsPerLeader {
@@ -134,17 +169,20 @@ func (b *Bot) cmdLFG(i *discordgo.Interaction) error {
 		return b.reply(i, notice(colorClosed, l.T("draft.nowhere")))
 	}
 	prof, _ := b.store.Profile(userID)
-	d := draft{Missing: 1, Class: prof.ClassID, Role: prof.RoleID, Zone: b.timeZone(userID, i.Locale)}
+	d := draft{Abyss: abyss, Missing: 1, Class: prof.ClassID, Role: prof.RoleID, Zone: b.timeZone(userID, i.Locale)}
+	if abyss {
+		d.LookingFor = []string{config.AnyID}
+	}
 	b.putDraft(userID, d)
 	return b.reply(i, b.draftPanel(d, l))
 }
 
-func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string) error {
+func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string, abyss bool) error {
 	userID, name := interactionUser(i)
 	l := lang(i)
-	d, ok := b.getDraft(userID)
+	d, ok := b.getDraft(userID, abyss)
 	if !ok {
-		return b.update(i, notice(colorClosed, l.T("draft.expired")))
+		return b.update(i, notice(colorClosed, l.T("draft.expired", b.cmd(draftCommand(abyss)))))
 	}
 	d.Problem = ""
 
@@ -159,6 +197,10 @@ func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string) e
 		if n, err := strconv.Atoi(first(values)); err == nil && n >= 1 {
 			d.Missing = min(n, b.draftMaxMissing(d))
 		}
+	case fieldSize:
+		if n, err := strconv.Atoi(first(values)); err == nil && slices.Contains(rallySizes, n) {
+			d.Size = n
+		}
 	case fieldPlays:
 		if classID, roleID, _ := strings.Cut(first(values), "|"); b.game.Fits([]string{config.AnyID}, classID, roleID) {
 			d.Class, d.Role = classID, roleID
@@ -168,8 +210,8 @@ func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string) e
 	case fieldPost:
 		return b.postDraft(i, userID, name, d)
 	case fieldCancel:
-		b.dropDraft(userID)
-		return b.update(i, notice(colorClosed, l.T("draft.cancelled")))
+		b.dropDraft(userID, abyss)
+		return b.update(i, notice(colorClosed, l.T("draft.cancelled", b.cmd(draftCommand(abyss)))))
 	}
 	b.putDraft(userID, d)
 	return b.update(i, b.draftPanel(d, l))
@@ -177,12 +219,12 @@ func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string) e
 
 // onDraftDetails handles the gear score, time & note form. It was opened
 // from the panel, so the answer updates the panel in place.
-func (b *Bot) onDraftDetails(i *discordgo.Interaction) error {
+func (b *Bot) onDraftDetails(i *discordgo.Interaction, abyss bool) error {
 	userID, _ := interactionUser(i)
 	l := lang(i)
-	d, ok := b.getDraft(userID)
+	d, ok := b.getDraft(userID, abyss)
 	if !ok {
-		return b.update(i, notice(colorClosed, l.T("draft.expired")))
+		return b.update(i, notice(colorClosed, l.T("draft.expired", b.cmd(draftCommand(abyss)))))
 	}
 	values := modalValues(i.ModalSubmitData().Components)
 	d.Problem = ""
@@ -212,9 +254,9 @@ func (b *Bot) onDraftDetails(i *discordgo.Interaction) error {
 func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) error {
 	l := lang(i)
 	now := time.Now()
-	switch _, ok := b.game.Dungeon(d.DungeonID); {
+	switch _, ok := b.draftDungeon(d); {
 	case !ok:
-		d.Problem = "draft.need_dungeon"
+		d.Problem = textFor("draft.need_dungeon", d.Abyss)
 	case len(d.LookingFor) == 0:
 		d.Problem = "draft.need_looking"
 	case !d.StartAt.IsZero() && !d.StartAt.After(now):
@@ -231,6 +273,11 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 	if d.StartAt.After(now) {
 		expires = d.StartAt.Add(b.game.PostTTL())
 	}
+	// A rally counts its players against its size instead.
+	missing := d.Missing
+	if d.Abyss {
+		missing = 0
+	}
 	prof, _ := b.store.Profile(userID)
 	p, err := b.store.CreatePost(lfg.Post{
 		LeaderID:    userID,
@@ -245,7 +292,9 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 		ModeID:      d.ModeID,
 		MinGS:       d.MinGS,
 		LookingFor:  d.LookingFor,
-		Missing:     d.Missing,
+		Missing:     missing,
+		Rally:       d.Abyss,
+		Size:        d.Size,
 		StartAt:     d.StartAt,
 		Note:        d.Note,
 		Status:      lfg.StatusOpen,
@@ -253,13 +302,13 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 		ExpiresAt:   expires,
 	}, b.game.MaxRunsPerLeader)
 	if errors.Is(err, lfg.ErrTooManyPosts) {
-		b.dropDraft(userID)
+		b.dropDraft(userID, d.Abyss)
 		return b.update(i, b.tooManyRuns(b.store.ActivePostsByLeader(userID), l))
 	}
 	if err != nil {
 		return b.update(i, notice(colorClosed, errorText(err, l)))
 	}
-	b.dropDraft(userID)
+	b.dropDraft(userID, d.Abyss)
 
 	// Answer within Discord's 3 second limit, then fill in the result.
 	guilds := b.store.Targets(i.GuildID)
@@ -272,7 +321,7 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 		b.store.UpdatePost(p.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) })
 		return b.editReply(i, notice(colorClosed, l.T("draft.not_delivered")))
 	}
-	msg := l.T("draft.live", l.N(sent, "n.server"))
+	msg := l.T(textFor("draft.live", p.Rally), l.N(sent, "n.server"))
 	if failed > 0 {
 		msg += l.T("draft.unreachable", l.N(failed, "n.server"))
 	}

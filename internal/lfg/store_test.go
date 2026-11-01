@@ -529,3 +529,37 @@ func TestShownPostsIncludeEndedOnes(t *testing.T) {
 		t.Fatalf("shown %v, want the open and the closed post of %v", shown, ids)
 	}
 }
+
+func TestRalliesRoundTrip(t *testing.T) {
+	s, _ := openTestStore(t)
+	now := time.Now()
+	create := func(size int) Post {
+		p, err := s.CreatePost(Post{LeaderID: "L", GuildID: "g1", DungeonID: "artifact-siege", Rally: true, Size: size,
+			Status: StatusOpen, LookingFor: []string{"any"}, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	capped, unlimited := create(5), create(0)
+	p, err := s.UpdatePost(capped.ID, func(p *Post) error { return p.AddApplicant(Player{UserID: "a"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Post(p.ID); !got.Rally || got.Size != 5 || len(got.Accepted) != 1 || len(got.Applicants) != 0 {
+		t.Fatalf("stored rally %+v", got)
+	}
+	for _, p := range []Post{capped, unlimited} {
+		s.UpdatePost(p.ID, func(p *Post) error { return p.Close(StatusClosed, now) })
+	}
+	runs := s.Runs([]string{"g1"}, now.Add(-time.Hour))
+	unlimitedRuns := 0
+	for _, r := range runs {
+		if r.Unlimited {
+			unlimitedRuns++
+		}
+	}
+	if len(runs) != 2 || unlimitedRuns != 1 {
+		t.Fatalf("runs %+v", runs)
+	}
+}

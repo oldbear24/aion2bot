@@ -73,7 +73,7 @@ func (b *Bot) onAlert(i *discordgo.Interaction, field string, values []string) e
 }
 
 func (b *Bot) alertPanel(a lfg.Alert, prof lfg.Profile, l i18n.Lang) discordgo.MessageComponent {
-	dungeons := b.dungeonOptions("", l)
+	dungeons := b.dungeonOptions(b.game.All(), "", l)
 	for n := range dungeons {
 		dungeons[n].Default = slices.Contains(a.Dungeons, dungeons[n].Value)
 	}
@@ -82,7 +82,7 @@ func (b *Bot) alertPanel(a lfg.Alert, prof lfg.Profile, l i18n.Lang) discordgo.M
 	status := l.T("alert.off")
 	if a.On() {
 		var names []string
-		for _, d := range b.game.Dungeons {
+		for _, d := range b.game.All() {
 			if slices.Contains(a.Dungeons, d.ID) {
 				names = append(names, d.Name)
 			}
@@ -159,12 +159,12 @@ func (b *Bot) alertDM(p lfg.Post, ref lfg.MessageRef, l i18n.Lang) discordgo.Mes
 	if line := difficultyLine(dungeon, p.ModeID, p.MinGS, l); line != "" {
 		s += "\n" + line
 	}
-	s += "\n" + l.T("card.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
+	s += "\n" + b.statusLine(p, l)
 	s += "\n" + b.game.LeaderEmoji + " " + l.T("card.leader") + "**" + escape(p.LeaderName) + "**"
 	if p.GuildName != "" {
 		s += " · *" + escape(truncate(p.GuildName, 40)) + "*"
 	}
-	s += "\n" + l.T("card.start") + startText(p.StartAt, p.Start, l)
+	s += "\n" + l.T("card.start") + postStart(p, l)
 	return container(colorOpen,
 		text(s),
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{

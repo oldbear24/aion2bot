@@ -369,6 +369,55 @@ def temple(g):  # raid
     g.circle((64, 39), 4, cut=True)
 
 
+def castle(g):  # artifact siege
+    for x0 in (26, 80):  # towers, with battlements
+        g.rrect((x0, 42, x0 + 22, 98), 2, tint=x0 > 64)
+        for x in (x0, x0 + 8, x0 + 16):
+            g.rrect((x, 32, x + 6, 44), 1.5, tint=x0 > 64)
+    g.rrect((46, 56, 82, 98), 1)  # wall
+    for x in (50, 61, 72):
+        g.rrect((x, 48, x + 6, 58), 1.5)
+    g.rrect((56, 74, 72, 100), 8, cut=True)  # gate
+    g.rrect((56, 86, 72, 100), 0, cut=True)
+
+
+def boss(g):  # abyss boss: a horned head
+    g.poly([(44, 54), (30, 40), (26, 22), (40, 34), (56, 44)])
+    g.poly([(84, 54), (98, 40), (102, 22), (88, 34), (72, 44)], tint=True)
+    g.circle((64, 70), 28)
+    g.right()
+    g.poly([(46, 62), (60, 67), (58, 74), (47, 71)], cut=True)  # eyes
+    g.poly([(82, 62), (68, 67), (70, 74), (81, 71)], cut=True)
+    g.rrect((50, 82, 78, 90), 3, cut=True)  # mouth and fangs
+    g.poly([(54, 82), (60, 82), (57, 89)])
+    g.poly([(68, 82), (74, 82), (71, 89)])
+
+
+def portal(g):  # dimensional invasion: a vortex
+    pts = []
+    for i in range(0, 721, 6):
+        a = math.radians(i - 90)
+        r = 5 + 29 * i / 720
+        pts.append((64 + r * math.cos(a), 64 + r * math.sin(a)))
+    g.line(pts, 9)
+    g.right()
+
+
+def flag(g):  # rift invasion: a flag planted in enemy land
+    g.capsule((40, 28), (40, 98), 8)
+    g.poly([(42, 30), (96, 34), (82, 50), (96, 68), (42, 64)])
+    g.shade([(64, 0), (128, 0), (128, 128), (64, 128)])
+    g.rrect((26, 94, 56, 104), 4)
+
+
+def loot(g):  # abyss farm: a bag of loot
+    g.poly([(46, 28), (58, 38), (64, 30), (70, 38), (82, 28), (76, 50), (52, 50)])
+    g.rrect((50, 46, 78, 54), 3, tint=True)
+    g.circle((64, 78), 28)
+    g.right()
+    g.poly([(64, 62), (75, 78), (64, 94), (53, 78)], cut=True)  # an Abyss crystal on it
+
+
 def bell(g):
     g.circle((64, 30), 5)
     g.poly([(44, 76), (46, 50), (54, 38), (64, 34), (74, 38), (82, 50), (84, 76), (94, 86), (34, 86)])
@@ -511,6 +560,8 @@ ICONS = {
     "top": (GOLD, top), "server": (NAVY, server), "timer": (TEAL, timer), "open": (GREEN, open_),
     "help": (NAVY, help_), "admin": (SLATE, admin), "legend": (PURPLE, legend),
     "unknown": (SLATE, unknown, "circle"),
+    "castle": (NAVY, castle), "boss": (RED, boss), "portal": (PURPLE, portal), "flag": (ORANGE, flag),
+    "loot": (GOLD, loot),
 }
 
 

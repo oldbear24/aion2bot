@@ -179,7 +179,9 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 	case discordgo.InteractionApplicationCommand:
 		switch i.ApplicationCommandData().Name {
 		case "lfg":
-			err = b.cmdLFG(i)
+			err = b.cmdLFG(i, false)
+		case "lfg-abyss":
+			err = b.cmdLFG(i, true)
 		case "lfg-find":
 			err = b.cmdFind(i)
 		case "lfg-notify":
@@ -209,8 +211,8 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 		}
 	case discordgo.InteractionModalSubmit:
 		id := i.ModalSubmitData().CustomID
-		if id == draftID(fieldDetails) {
-			err = b.onDraftDetails(i)
+		if id == draftID(fieldDetails, false) || id == draftID(fieldDetails, true) {
+			err = b.onDraftDetails(i, id == draftID(fieldDetails, true))
 		} else if id == idProfileModal {
 			err = b.onProfileSubmit(i)
 		} else if action, postID, ok := parseCustomID(id); ok && action == actJoinForm {
@@ -221,7 +223,9 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 	case discordgo.InteractionMessageComponent:
 		data := i.MessageComponentData()
 		if field, ok := strings.CutPrefix(data.CustomID, draftPrefix); ok {
-			err = b.onDraft(i, field, data.Values)
+			err = b.onDraft(i, field, data.Values, false)
+		} else if field, ok := strings.CutPrefix(data.CustomID, abyssDraftPrefix); ok {
+			err = b.onDraft(i, field, data.Values, true)
 		} else if field, ok := strings.CutPrefix(data.CustomID, alertPrefix); ok {
 			err = b.onAlert(i, field, data.Values)
 		} else if data.CustomID == idFindJoin {

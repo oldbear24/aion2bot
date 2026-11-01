@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,12 +44,18 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 	case actKick:
 		return b.onKick(i, p, values)
 	case actMore, actLess:
+		// A rally changes its size instead.
+		if p.Rally {
+			return b.update(i, b.managePanel(p, l))
+		}
 		delta := 1
 		if action == actLess {
 			delta = -1
 		}
 		limit := b.game.DungeonOrUnknown(p.DungeonID).MaxMissing(p.ModeID, b.game.MaxMissing)
 		return b.leaderUpdate(i, p.ID, func(p *lfg.Post) error { return p.AdjustMissing(delta, limit) })
+	case actSize:
+		return b.onSize(i, p, first(values))
 	case actClose:
 		return b.leaderUpdate(i, p.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) })
 	case actEdit:
@@ -153,10 +160,15 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	b.scheduleSync(p.ID)
 	b.rememberJoin(pl)
 
+	// A rally takes the player straight in, so they hear whom to look for
+	// in game right away.
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	reserve := p.IsReserve(userID)
 	if reserve {
-		err = b.reply(i, notice(colorFull, l.T("join.reserve", dungeon.Name, b.bringing(p, pl), len(p.Reserves))))
+		err = b.reply(i, notice(colorFull, l.T(textFor("join.reserve", p.Rally), dungeon.Name, b.bringing(p, pl), len(p.Reserves))))
+	} else if p.Rally {
+		err = b.reply(i, notice(colorOpen, l.T("join.abyss_done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))+
+			leaderCharLine(p, l)))
 	} else {
 		err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))))
 	}
@@ -172,7 +184,7 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 		if !b.announce(p, map[string][]string{p.GuildID: {p.LeaderID}}, true, note)[p.GuildID] {
 			ll := b.guildLang(p.GuildID)
 			b.dm(p.LeaderID, container(colorOpen,
-				text(ll.T("dm.leader", dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
+				text(ll.T(textFor("dm.leader", p.Rally), dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
 		}
 	}
 	if p, ok := b.store.Post(p.ID); ok {
@@ -264,7 +276,7 @@ func (b *Bot) welcome(p lfg.Post, players []lfg.Player, promoted bool) {
 		if !b.announce(p, map[string][]string{pl.GuildID: {pl.UserID}}, true, note)[pl.GuildID] {
 			pll := b.guildLang(pl.GuildID)
 			b.dm(pl.UserID, notice(colorFull, pll.T(dmKey, escape(p.LeaderName), p.LeaderID, where, b.bringing(p, pl),
-				startText(p.StartAt, p.Start, pll))+leaderCharLine(p, pll)))
+				postStart(p, pll))+leaderCharLine(p, pll)))
 		}
 	}
 	// They joined the threads as applicants; this covers anyone who wasn't
@@ -379,9 +391,11 @@ func (b *Bot) onReopen(i *discordgo.Interaction, p lfg.Post) error {
 // The cards and the thread names follow, and the threads hear about it
 // without pinging anyone.
 func (b *Bot) onMove(i *discordgo.Interaction, before lfg.Post, dungeonID, modeID string) error {
-	// A dungeon with modes needs one of them; one without takes none.
+	// A dungeon with modes needs one of them; one without takes none. A
+	// rally stays among the Abyss events, and a dungeon post among the
+	// dungeons.
 	to, ok := b.game.Dungeon(dungeonID)
-	if _, hasMode := to.Mode(modeID); !ok || !hasMode && (len(to.Modes) > 0 || modeID != "") {
+	if _, hasMode := to.Mode(modeID); !ok || to.Abyss != before.Rally || !hasMode && (len(to.Modes) > 0 || modeID != "") {
 		return b.update(i, b.managePanel(before, lang(i)))
 	}
 	p, err := b.leaderChange(i, before.ID, func(p *lfg.Post) error {
@@ -397,6 +411,32 @@ func (b *Bot) onMove(i *discordgo.Interaction, before lfg.Post, dungeonID, modeI
 	b.announce(p, nil, false, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
 		return b.moveNote(before, p, guildID, l)
 	})
+	return err
+}
+
+// onSize gives a rally a new group size from the manage panel. Reserves
+// move up into the room it makes and are welcomed like a player who moved
+// up when someone left.
+func (b *Bot) onSize(i *discordgo.Interaction, p lfg.Post, value string) error {
+	size, err := strconv.Atoi(value)
+	if err != nil || !p.Rally || !slices.Contains(rallySizes, size) {
+		return b.update(i, b.managePanel(p, lang(i)))
+	}
+	var fresh []lfg.Player
+	p, err = b.leaderChange(i, p.ID, func(p *lfg.Post) error {
+		moved, err := p.SetSize(size)
+		if err != nil {
+			return err
+		}
+		fresh = fresh[:0]
+		for _, pl := range moved {
+			if p.MarkPinged(pl.UserID) {
+				fresh = append(fresh, pl)
+			}
+		}
+		return nil
+	})
+	b.welcome(p, fresh, true)
 	return err
 }
 

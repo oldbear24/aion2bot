@@ -54,6 +54,8 @@ type tally struct {
 
 type runStats struct {
 	Posted, Open, Filled, Players int
+	// Unlimited counts the rallies without a size, which never fill.
+	Unlimited int
 	// FillTime is the median time from posting to a full party.
 	FillTime time.Duration
 	// Dungeons and Guilds are ranked by runs, most first.
@@ -68,6 +70,9 @@ func summarize(runs []lfg.Run) runStats {
 	for _, r := range runs {
 		s.Posted++
 		s.Players += r.Players
+		if r.Unlimited {
+			s.Unlimited++
+		}
 		if r.Status == lfg.StatusOpen || r.Status == lfg.StatusFull {
 			s.Open++
 		}
@@ -120,14 +125,16 @@ func (b *Bot) statsPanel(s runStats, days, servers int, names map[string]string,
 		return container(colorFull, text(head), text(l.T("stats.none")))
 	}
 
-	lines := []string{
-		l.T("stats.posted", s.Posted, s.Open),
-		l.T("stats.filled", s.Filled, s.Filled*100/s.Posted),
-		l.T("stats.players", s.Players),
+	lines := []string{l.T("stats.posted", s.Posted, s.Open)}
+	// Only runs that can fill count towards how many did.
+	if fillable := s.Posted - s.Unlimited; fillable > 0 {
+		filled := l.T("stats.filled", s.Filled, s.Filled*100/fillable)
+		if s.Filled > 0 {
+			filled += l.T("stats.fill_time", duration(s.FillTime, l))
+		}
+		lines = append(lines, filled)
 	}
-	if s.Filled > 0 {
-		lines[1] += l.T("stats.fill_time", duration(s.FillTime, l))
-	}
+	lines = append(lines, l.T("stats.players", s.Players))
 	comps := []discordgo.MessageComponent{text(head), text(strings.Join(lines, "\n")), divider()}
 
 	var top strings.Builder

@@ -31,6 +31,7 @@ var (
 	ErrGearScore     = errors.New("gear score below the post's requirement")
 	ErrStillOpen     = errors.New("post has not ended")
 	ErrPartyTooBig   = errors.New("party doesn't fit the dungeon")
+	ErrNotRally      = errors.New("post is not a rally")
 )
 
 // GuildConfig is where a server wants LFG posts delivered.
@@ -100,7 +101,15 @@ type Post struct {
 	// LookingFor holds role IDs, class IDs, or just "any". It keeps its old
 	// JSON name so posts saved before roles existed still load.
 	LookingFor []string `json:"class_ids"`
-	Missing    int      `json:"missing"`
+	// Missing is how many players a dungeon party still needs. Rallies
+	// leave it at zero and count Size instead.
+	Missing int `json:"missing"`
+	// Rally is set for an Abyss event or invasion: players join the group
+	// straight away, without the leader accepting them.
+	Rally bool `json:"rally,omitempty"`
+	// Size caps a rally at that many players, the leader included. Zero
+	// means no limit.
+	Size int `json:"size,omitempty"`
 	// Start is free text from posts made before the start time picker.
 	Start string `json:"start,omitempty"`
 	// StartAt is when the run starts; zero means as soon as the party is
@@ -220,9 +229,13 @@ func (p *Post) AddApplicant(pl Player) error {
 	case pl.GS < p.MinGS:
 		return ErrGearScore
 	}
-	if p.Status == StatusFull {
+	switch {
+	case p.Status == StatusFull:
 		p.Reserves = append(p.Reserves, pl)
-	} else {
+	case p.Rally:
+		p.Accepted = append(p.Accepted, pl)
+		p.refreshStatus()
+	default:
 		p.Applicants = append(p.Applicants, pl)
 	}
 	return nil
@@ -260,7 +273,8 @@ type Removal struct {
 }
 
 // Remove drops a player from the post. An accepted player's slot goes to
-// the first reserve with the same role; without one, it opens again.
+// the first reserve with the same role, or in a rally to the first
+// reserve; without one, it opens again.
 func (p *Post) Remove(userID string) (Removal, bool) {
 	if pl, ok := p.takeWaiting(userID); ok {
 		return Removal{Player: pl}, true
@@ -271,12 +285,12 @@ func (p *Post) Remove(userID string) (Removal, bool) {
 	}
 	r := Removal{Player: p.Accepted[i], WasAccepted: true}
 	p.Accepted = slices.Delete(p.Accepted, i, i+1)
-	if j := slices.IndexFunc(p.Reserves, func(res Player) bool { return res.RoleID == r.Player.RoleID }); j >= 0 {
+	if j := slices.IndexFunc(p.Reserves, func(res Player) bool { return p.Rally || res.RoleID == r.Player.RoleID }); j >= 0 {
 		promoted := p.Reserves[j]
 		p.Reserves = slices.Delete(p.Reserves, j, j+1)
 		p.Accepted = append(p.Accepted, promoted)
 		r.Promoted = &promoted
-	} else {
+	} else if !p.Rally {
 		p.Missing++
 	}
 	p.refreshStatus()
@@ -324,6 +338,30 @@ func (p *Post) SetDetails(minGS int, startAt time.Time, note string, ttl time.Du
 	return nil
 }
 
+// SetSize changes how many players a rally takes, the leader included;
+// zero means no limit. It can't go below the players already in it. The
+// reserves move up into the room it makes, first come first served, and
+// are returned.
+func (p *Post) SetSize(size int) ([]Player, error) {
+	switch {
+	case !p.Active():
+		return nil, ErrNotOpen
+	case !p.Rally:
+		return nil, ErrNotRally
+	case size < 0 || size > 0 && size < len(p.Party()):
+		return nil, ErrPartyTooBig
+	}
+	p.Size = size
+	var moved []Player
+	for len(p.Reserves) > 0 && (size == 0 || len(p.Party()) < size) {
+		moved = append(moved, p.Reserves[0])
+		p.Accepted = append(p.Accepted, p.Reserves[0])
+		p.Reserves = slices.Delete(p.Reserves, 0, 1)
+	}
+	p.refreshStatus()
+	return moved, nil
+}
+
 // Filled is how many slots of a party of size the post takes: the
 // leader, the accepted players and, when the size is known, the players
 // found outside the bot.
@@ -338,9 +376,14 @@ func (p *Post) Filled(size int) int {
 // players (zero if unknown) instead of oldSize. Everyone on the post stays,
 // and so do the players found outside the bot, so the party fills as many
 // slots as before. It fails with ErrPartyTooBig when the party doesn't fit.
+// A rally keeps its own size and ignores the sizes.
 func (p *Post) Move(dungeonID, modeID string, oldSize, newSize, maxMissing int) error {
 	if !p.Active() {
 		return ErrNotOpen
+	}
+	if p.Rally {
+		p.DungeonID, p.ModeID = dungeonID, modeID
+		return nil
 	}
 	missing := p.Missing
 	if newSize > 0 {
@@ -378,11 +421,20 @@ func (p *Post) Close(status Status, now time.Time) error {
 	return nil
 }
 
+// full reports whether the party has no room left: no players missing,
+// or a rally at its size.
+func (p *Post) full() bool {
+	if p.Rally {
+		return p.Size > 0 && len(p.Party()) >= p.Size
+	}
+	return p.Missing == 0
+}
+
 func (p *Post) refreshStatus() {
 	if !p.Active() {
 		return
 	}
-	if p.Missing == 0 {
+	if p.full() {
 		p.Status = StatusFull
 		if p.FilledAt.IsZero() {
 			p.FilledAt = time.Now()

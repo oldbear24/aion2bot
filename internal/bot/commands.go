@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/bwmarrin/discordgo"
@@ -22,8 +23,8 @@ func commandList(game *config.Game) []*discordgo.ApplicationCommand {
 	for _, l := range i18n.Langs {
 		languages = append(languages, &discordgo.ApplicationCommandOptionChoice{Name: l.Name(), Value: string(l)})
 	}
-	dungeons := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(game.Dungeons))
-	for _, d := range game.Dungeons {
+	dungeons := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(game.All()))
+	for _, d := range game.All() {
 		dungeons = append(dungeons, &discordgo.ApplicationCommandOptionChoice{Name: truncate(d.Name, 100), Value: d.ID})
 	}
 	periods := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(statsPeriods))
@@ -34,7 +35,7 @@ func commandList(game *config.Game) []*discordgo.ApplicationCommand {
 		})
 	}
 
-	return []*discordgo.ApplicationCommand{
+	commands := []*discordgo.ApplicationCommand{
 		command("lfg", "cmd.lfg", nil, guildOnly),
 		command("lfg-find", "cmd.find", nil, guildOnly,
 			option(discordgo.ApplicationCommandOptionString, "dungeon", "cmd.find.dungeon", false, func(o *discordgo.ApplicationCommandOption) {
@@ -70,6 +71,11 @@ func commandList(game *config.Game) []*discordgo.ApplicationCommand {
 		command("lfg-disable", "cmd.disable", &manageServer, guildOnly),
 		networkCommand(&manageServer, guildOnly),
 	}
+	// Without Abyss events in game.json, there is nothing to post with it.
+	if len(game.Abyss) > 0 {
+		commands = slices.Insert(commands, 1, command("lfg-abyss", "cmd.abyss", nil, guildOnly))
+	}
+	return commands
 }
 
 func command(name, key string, perms *int64, contexts *[]discordgo.InteractionContextType,

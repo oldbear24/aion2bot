@@ -503,7 +503,7 @@ func TestDraftStartsWithNothingPicked(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if sel, ok := row.Components[0].(discordgo.SelectMenu); ok && sel.CustomID == draftID(fieldLookingFor) {
+		if sel, ok := row.Components[0].(discordgo.SelectMenu); ok && sel.CustomID == draftID(fieldLookingFor, false) {
 			found = true
 			for _, o := range sel.Options {
 				if o.Default {
@@ -529,7 +529,7 @@ func postDisabled(panel discordgo.MessageComponent) bool {
 	for _, c := range panel.(discordgo.Container).Components {
 		if row, ok := c.(discordgo.ActionsRow); ok {
 			for _, rc := range row.Components {
-				if btn, ok := rc.(discordgo.Button); ok && btn.CustomID == draftID(fieldPost) {
+				if btn, ok := rc.(discordgo.Button); ok && (btn.CustomID == draftID(fieldPost, false) || btn.CustomID == draftID(fieldPost, true)) {
 					return btn.Disabled
 				}
 			}
