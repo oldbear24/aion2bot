@@ -308,3 +308,78 @@ func TestRallyJoinsStraightIn(t *testing.T) {
 		t.Fatalf("a dungeon post has no group size: %v", err)
 	}
 }
+
+func TestHandOver(t *testing.T) {
+	setup := func() Post {
+		p := newPost(3)
+		p.LeaderName, p.LeaderClass, p.LeaderRole, p.GuildID, p.GuildName = "Lea", "cleric", "healer", "g1", "One"
+		for _, pl := range []Player{
+			{UserID: "a", Name: "Ann", ClassID: "templar", RoleID: "tank", GS: 3000, GuildID: "g2", GuildName: "Two", Char: "Annie"},
+			{UserID: "b", Name: "Bob", ClassID: "ranger", RoleID: "dps", GuildID: "g1"},
+		} {
+			p.AddApplicant(pl)
+		}
+		p.Accept([]string{"a", "b"})
+		p.AddApplicant(Player{UserID: "w", RoleID: "dps"})
+		return p
+	}
+
+	// Handing over and staying swaps the two: the party stays as it was.
+	p := setup()
+	if _, err := p.HandOver("w", true); !errors.Is(err, ErrNotInParty) {
+		t.Fatalf("hand over to a player still waiting: %v", err)
+	}
+	r, err := p.HandOver("a", true)
+	switch {
+	case err != nil || r.Player.UserID != "":
+		t.Fatalf("hand over: %+v, %v", r, err)
+	case p.LeaderID != "a" || p.LeaderName != "Ann" || p.LeaderChar != "Annie" || p.LeaderClass != "templar" || p.LeaderGS != 3000:
+		t.Fatalf("new leader %+v", p.Leader())
+	case p.GuildID != "g2" || p.GuildName != "Two":
+		t.Fatalf("the post stays on the old leader's server: %s", p.GuildID)
+	case !p.InParty("leader") || p.Missing != 1 || len(p.Party()) != 3:
+		t.Fatalf("party after handing over: %+v, missing %d", p.Party(), p.Missing)
+	}
+	if old := p.Accepted[0]; old.UserID != "leader" || old.ClassID != "cleric" || old.RoleID != "healer" || old.GuildID != "g1" {
+		t.Fatalf("the old leader joins the party as %+v", old)
+	}
+
+	// Leaving frees the old leader's slot.
+	p = setup()
+	if _, err := p.HandOver("b", false); err != nil || p.InParty("leader") || p.Has("leader") || p.Missing != 2 || p.LeaderID != "b" {
+		t.Fatalf("hand over and leave: %v, %+v", err, p)
+	}
+	p.Close(StatusClosed, time.Now())
+	if _, err := p.HandOver("a", true); !errors.Is(err, ErrNotOpen) {
+		t.Fatalf("hand over an ended post: %v", err)
+	}
+}
+
+func TestSetLookingForAndHide(t *testing.T) {
+	p := newPost(1)
+	if err := p.SetLookingFor(nil); !errors.Is(err, ErrNothingWanted) {
+		t.Fatalf("looking for nobody: %v", err)
+	}
+	ids := []string{"tank", "cleric"}
+	if err := p.SetLookingFor(ids); err != nil || !slices.Equal(p.LookingFor, ids) {
+		t.Fatalf("looking for %v: %v", p.LookingFor, err)
+	}
+	ids[0] = "changed"
+	if p.LookingFor[0] != "tank" {
+		t.Fatal("the post shares the caller's slice")
+	}
+	if err := p.SetServer("Siel"); !errors.Is(err, ErrNotRally) {
+		t.Fatalf("a dungeon post took a game server: %v", err)
+	}
+
+	if !p.Hide("g2") || p.Hide("g2") || !p.HiddenIn("g2") || p.HiddenIn("g1") {
+		t.Fatalf("hidden in %v", p.Hidden)
+	}
+	if c := p.Clone(); c.Hide("g3") && p.HiddenIn("g3") {
+		t.Fatal("a clone shares the hidden servers")
+	}
+	p.Close(StatusExpired, time.Now())
+	if err := p.SetLookingFor([]string{"any"}); !errors.Is(err, ErrNotOpen) {
+		t.Fatalf("change an ended post: %v", err)
+	}
+}

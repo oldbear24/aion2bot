@@ -119,29 +119,156 @@ func TestCleanChar(t *testing.T) {
 
 func TestProfileAsksForCharacterAndReminders(t *testing.T) {
 	b := testBot(t)
-	m := b.profileModal(lfg.Profile{Char: "Lunaria", SkipReminders: true}, i18n.English)
-	values := map[string]discordgo.MessageComponent{}
+	prof := lfg.Profile{ClassID: "cleric", RoleID: "healer", Char: "Lunaria", Server: "Siel", GS: 3150, Faction: "asmodian",
+		SkipReminders: true}
+	m := b.profileForm(prof, i18n.English)
+	values := map[string]string{}
 	for _, c := range m.Components {
-		l := c.(discordgo.Label)
-		switch v := l.Component.(type) {
-		case discordgo.TextInput:
-			values[v.CustomID] = v
-		case modalSelect:
-			values[v.CustomID] = v
+		ti := c.(discordgo.Label).Component.(discordgo.TextInput)
+		values[ti.CustomID] = ti.Value
+	}
+	if values["char"] != "Lunaria" || values["server"] != "Siel" || values["gs"] != "3150" {
+		t.Errorf("profile form filled in with %v", values)
+	}
+
+	// The panel shows the profile, and its menus start from it; the time
+	// zone is guessed until the player picks one.
+	panel := b.profilePanel(prof, "cs", "", i18n.English)
+	defaults := map[string][]string{}
+	for _, c := range panel.(discordgo.Container).Components {
+		if row, ok := c.(discordgo.ActionsRow); ok {
+			if sel, ok := row.Components[0].(discordgo.SelectMenu); ok {
+				for _, o := range sel.Options {
+					if o.Default {
+						defaults[sel.CustomID] = append(defaults[sel.CustomID], o.Value)
+					}
+				}
+			}
 		}
 	}
-	if values["char"].(discordgo.TextInput).Value != "Lunaria" {
-		t.Errorf("character name not filled in: %+v", values["char"])
+	for id, want := range map[string]string{profChoice: "cleric|healer", profFaction: "asmodian", profZone: "Europe/Prague",
+		profRemind: "off"} {
+		if got := defaults[profilePrefix+id]; !slices.Equal(got, []string{want}) {
+			t.Errorf("%s menu starts at %v, want %s", id, got, want)
+		}
 	}
-	for _, o := range values["remind"].(modalSelect).Options {
-		if o.Default != (o.Value == "off") {
-			t.Errorf("reminder option %s default %v", o.Value, o.Default)
+	raw := jsonOf(t, panel)
+	for _, want := range []string{"`Lunaria`", "Siel", "3,150", profilePrefix + profEdit} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("profile panel lacks %q:\n%s", want, raw)
+		}
+	}
+	for _, l := range i18n.Langs {
+		for _, p := range []lfg.Profile{{}, prof} {
+			panel := b.profilePanel(p, "en-US", "✅", l)
+			if count, textLen := measure(t, panel); count > maxComponents || textLen > maxTextLength {
+				t.Errorf("%s profile panel: %d components, %d characters", l, count, textLen)
+			}
+			checkSelects(t, panel)
 		}
 	}
 
 	join := b.joinModal(busyPost(b), lfg.Profile{Char: "Lunaria"}, i18n.English)
 	if ti := join.Components[2].(discordgo.Label).Component.(discordgo.TextInput); ti.CustomID != "char" || ti.Value != "Lunaria" {
 		t.Errorf("join form character: %+v", ti)
+	}
+}
+
+func TestFactionAndServer(t *testing.T) {
+	b := testBot(t)
+	p := lfg.Post{ID: "p", LeaderID: "L", DungeonID: "krao-cave", LookingFor: []string{config.AnyID}, Missing: 1,
+		Status: lfg.StatusOpen, Faction: "elyos"}
+	r := rally(0, 1)
+	r.Faction, r.Server = "elyos", "Siel"
+
+	for _, c := range []struct {
+		name            string
+		post            lfg.Post
+		faction, server string
+		want            bool
+	}{
+		{"same faction", p, "elyos", "", true},
+		{"other faction", p, "asmodian", "", false},
+		{"faction not saved", p, "", "", true},
+		{"a dungeon ignores the server", p, "elyos", "Zikel", true},
+		{"rally on the same server", r, "elyos", " siel ", true},
+		{"rally on another server", r, "elyos", "Zikel", false},
+		{"rally, server not saved", r, "elyos", "", true},
+		{"rally of the other faction", r, "asmodian", "Siel", false},
+	} {
+		if got := sideFits(c.post, c.faction, c.server); got != c.want {
+			t.Errorf("%s: sideFits %v, want %v", c.name, got, c.want)
+		}
+		if got := b.canJoin(c.post, "u", lfg.Profile{Faction: c.faction, Server: c.server}); got != c.want {
+			t.Errorf("%s: canJoin %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	// The card says whom the post is for.
+	if card := jsonOf(t, b.postCard(r, "g1", "", i18n.English)); !strings.Contains(card, "☀️ Elyos · Siel server") {
+		t.Errorf("rally card lacks its faction and server:\n%s", card)
+	}
+	if card := jsonOf(t, b.postCard(p, "g1", "", i18n.Czech)); !strings.Contains(card, "☀️ Elyos") || strings.Contains(card, "server") {
+		t.Errorf("dungeon card:\n%s", card)
+	}
+
+	// The join form asks only what the profile doesn't settle.
+	ids := func(m modal) []string {
+		var out []string
+		for _, c := range m.Components {
+			switch v := c.(discordgo.Label).Component.(type) {
+			case discordgo.TextInput:
+				out = append(out, v.CustomID)
+			case modalSelect:
+				out = append(out, v.CustomID)
+			}
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name string
+		post lfg.Post
+		prof lfg.Profile
+		want []string
+	}{
+		{"fitting profile", p, lfg.Profile{Faction: "elyos"}, []string{"choice", "gs", "char"}},
+		{"no faction saved", p, lfg.Profile{}, []string{"choice", "gs", "char", "faction"}},
+		{"alt of the other faction", p, lfg.Profile{Faction: "asmodian"}, []string{"choice", "gs", "char", "faction"}},
+		{"rally, fitting profile", r, lfg.Profile{Faction: "elyos", Server: "SIEL"}, []string{"choice", "gs", "char"}},
+		{"rally, nothing saved", r, lfg.Profile{}, []string{"choice", "gs", "char", "faction", "server"}},
+	} {
+		if got := ids(b.joinModal(c.post, c.prof, i18n.English)); !slices.Equal(got, c.want) {
+			t.Errorf("%s: join form asks %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	// The /lfg panel needs a faction before it posts; a rally's details ask
+	// for its game server.
+	d := draft{LookingFor: []string{"tank"}, Missing: 1}
+	b.selectDungeon(&d, "krao-cave")
+	if !postDisabled(b.draftPanel(d, i18n.English)) {
+		t.Error("a post without a faction can be posted")
+	}
+	d.Faction = "asmodian"
+	if postDisabled(b.draftPanel(d, i18n.English)) {
+		t.Error("a post with a faction can't be posted")
+	}
+	if got := ids(b.detailsModal(d, i18n.English)); slices.Contains(got, "server") {
+		t.Errorf("a dungeon post asks for a game server: %v", got)
+	}
+	abyss := draft{Abyss: true, LookingFor: []string{config.AnyID}, Server: "Siel"}
+	if got := ids(b.detailsModal(abyss, i18n.English)); !slices.Contains(got, "server") {
+		t.Errorf("a rally's details don't ask for a game server: %v", got)
+	}
+	if got := ids(b.editModal(r, time.UTC, i18n.English)); !slices.Contains(got, "server") {
+		t.Errorf("a rally's edit form doesn't ask for a game server: %v", got)
+	}
+
+	// Without factions in game.json, nothing asks for one.
+	b.game.Factions = nil
+	d.Faction = ""
+	if postDisabled(b.draftPanel(d, i18n.English)) {
+		t.Error("without factions, a post needs none")
 	}
 }
 

@@ -14,24 +14,92 @@ import (
 	"aion2bot/internal/lfg"
 )
 
-const idProfileModal = "lfgp:save"
+// The /profile panel uses "lfgp:<field>"; every change is saved at once.
+// Its button opens the form for what is typed, whose answer is
+// idProfileModal.
+const (
+	profilePrefix  = "lfgp:"
+	profChoice     = "choice"
+	profFaction    = "faction"
+	profZone       = "tz"
+	profRemind     = "remind"
+	profEdit       = "edit"
+	idProfileModal = profilePrefix + "save"
+)
 
-// maxChar is the longest in-game character name the bot keeps.
+// maxChar is the longest in-game character or game server name the bot
+// keeps.
 const maxChar = 24
 
-// /profile lets a player save their main role, class, character name and
-// gear score, which the join form starts from, plus their time zone and
-// whether they want reminders before runs start.
+// /profile shows what a player saved about themselves, to change it: their
+// main role and class, which the join form starts from, their faction,
+// character, game server and gear score, which /lfg-find and /lfg-notify
+// match runs to, their time zone, and whether they want reminders before
+// runs start.
 func (b *Bot) cmdProfile(i *discordgo.Interaction) error {
 	userID, _ := interactionUser(i)
 	prof, _ := b.store.Profile(userID)
-	if prof.TimeZone == "" {
-		prof.TimeZone = guessZone(string(i.Locale))
-	}
-	return b.showModal(i, b.profileModal(prof, lang(i)))
+	return b.reply(i, b.profilePanel(prof, string(i.Locale), "", lang(i)))
 }
 
-func (b *Bot) profileModal(prof lfg.Profile, l i18n.Lang) modal {
+// profilePanel shows a profile with a menu for each choice and a button for
+// what is typed. Until the player picks a time zone, it shows the one
+// guessed from their Discord language, which start times are read in.
+func (b *Bot) profilePanel(prof lfg.Profile, locale, done string, l i18n.Lang) discordgo.MessageComponent {
+	unset := l.T("profile.unset")
+	plays := unset
+	if prof.ClassID != "" {
+		plays = b.choiceText(prof.ClassID, prof.RoleID)
+	}
+	char := orDefault(charTag(prof.Char), unset)
+	gs := unset
+	if prof.GS > 0 {
+		gs = l.GS(prof.GS)
+	}
+	summary := l.T("profile.plays", plays) + "\n" + l.T("profile.char_line", char) + "\n" +
+		l.T("profile.server_line", orDefault(escape(prof.Server), unset)) + "\n" + l.T("profile.gs_line", gs)
+	zone := prof.TimeZone
+	if zone == "" {
+		zone = guessZone(locale)
+	}
+
+	head := l.T("profile.title_panel")
+	if done != "" {
+		head += "\n" + done
+	}
+	comps := []discordgo.MessageComponent{
+		text(head),
+		text(summary),
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{CustomID: profilePrefix + profEdit, Label: l.T("profile.edit"), Style: discordgo.PrimaryButton,
+				Emoji: emoji("✏️")},
+		}},
+		divider(),
+		text(l.T("profile.choice_label")),
+		selectRow(profilePrefix+profChoice, l.T("profile.choice_ph"), 1,
+			b.choiceOptions(b.game.Choices([]string{config.AnyID}), profileChoice(prof))),
+	}
+	if len(b.game.Factions) > 0 {
+		comps = append(comps,
+			text(l.T("profile.faction_label")),
+			selectRow(profilePrefix+profFaction, l.T("profile.faction_ph"), 1, b.factionOptions(prof.Faction)))
+	}
+	comps = append(comps,
+		text(l.T("profile.tz_label")),
+		selectRow(profilePrefix+profZone, l.T("profile.tz_ph"), 1, zoneOptions(zone, l, time.Now())),
+		text(l.T("profile.remind_label", l.N(b.game.ReminderMinutes, "n.minutes"))),
+		selectRow(profilePrefix+profRemind, l.T("profile.remind"), 1, []discordgo.SelectMenuOption{
+			{Label: l.T("profile.remind_on"), Value: "on", Emoji: emoji("⏰"), Default: !prof.SkipReminders},
+			{Label: l.T("profile.remind_off"), Value: "off", Emoji: emoji("🔕"), Default: prof.SkipReminders},
+		}),
+		text(l.T("profile.footer")),
+	)
+	return container(colorFull, comps...)
+}
+
+// profileForm asks for what a player types about themselves: their
+// character's name and game server, and their gear score.
+func (b *Bot) profileForm(prof lfg.Profile, l i18n.Lang) modal {
 	optional := false
 	gs := ""
 	if prof.GS > 0 {
@@ -41,34 +109,81 @@ func (b *Bot) profileModal(prof lfg.Profile, l i18n.Lang) modal {
 		CustomID: idProfileModal,
 		Title:    l.T("profile.title"),
 		Components: []discordgo.MessageComponent{
-			discordgo.Label{
-				Label:       l.T("profile.choice"),
-				Description: l.T("profile.choice_help"),
-				Component: modalSelect{CustomID: "choice", Placeholder: l.T("profile.choice_ph"), MinValues: 1, MaxValues: 1,
-					Options: b.choiceOptions(b.game.Choices([]string{config.AnyID}), profileChoice(prof))},
-			},
 			charInput(prof.Char, l),
+			serverInput(prof.Server, l.T("profile.server_help"), false, l),
 			discordgo.Label{
 				Label:       l.T("profile.gs"),
 				Description: l.T("profile.gs_help"),
 				Component: discordgo.TextInput{CustomID: "gs", Style: discordgo.TextInputShort, Value: gs,
 					Placeholder: l.T("join.gs_ph"), Required: &optional, MaxLength: 8},
 			},
-			discordgo.Label{
-				Label:       l.T("profile.tz"),
-				Description: l.T("profile.tz_help"),
-				Component: modalSelect{CustomID: "tz", Placeholder: l.T("profile.tz_ph"), MinValues: 1, MaxValues: 1,
-					Options: zoneOptions(prof.TimeZone, l, time.Now())},
-			},
-			discordgo.Label{
-				Label:       l.T("profile.remind"),
-				Description: truncate(l.T("profile.remind_help", l.N(b.game.ReminderMinutes, "n.minutes")), 100),
-				Component: modalSelect{CustomID: "remind", MinValues: 1, MaxValues: 1, Options: []discordgo.SelectMenuOption{
-					{Label: l.T("profile.remind_on"), Value: "on", Emoji: emoji("⏰"), Default: !prof.SkipReminders},
-					{Label: l.T("profile.remind_off"), Value: "off", Emoji: emoji("🔕"), Default: prof.SkipReminders},
-				}},
-			},
 		},
+	}
+}
+
+// onProfile saves a choice made on the /profile panel, or opens the form.
+func (b *Bot) onProfile(i *discordgo.Interaction, field string, values []string) error {
+	userID, _ := interactionUser(i)
+	l := lang(i)
+	prof, ok := b.store.Profile(userID)
+	if !ok {
+		prof = lfg.Profile{UserID: userID}
+	}
+	value := first(values)
+	switch field {
+	case profEdit:
+		return b.showModal(i, b.profileForm(prof, l))
+	case profChoice:
+		classID, roleID, _ := strings.Cut(value, "|")
+		if !b.game.Fits([]string{config.AnyID}, classID, roleID) {
+			return b.update(i, b.profilePanel(prof, string(i.Locale), "⚠️ "+l.T("profile.bad_choice"), l))
+		}
+		prof.ClassID, prof.RoleID = classID, roleID
+	case profFaction:
+		if faction := b.knownFaction(value); faction != "" {
+			prof.Faction = faction
+		}
+	case profZone:
+		if slices.Contains(timeZones, value) {
+			prof.TimeZone = value
+		}
+	case profRemind:
+		prof.SkipReminders = value == "off"
+	}
+	return b.updateProfile(i, prof)
+}
+
+// onProfileSubmit saves the character, game server and gear score from the
+// form opened on the /profile panel.
+func (b *Bot) onProfileSubmit(i *discordgo.Interaction) error {
+	userID, _ := interactionUser(i)
+	l := lang(i)
+	values := modalValues(i.ModalSubmitData().Components)
+	prof, ok := b.store.Profile(userID)
+	if !ok {
+		prof = lfg.Profile{UserID: userID}
+	}
+	gs, err := parseGS(first(values["gs"]))
+	if err != nil {
+		return b.update(i, b.profilePanel(prof, string(i.Locale), "⚠️ "+l.T("profile.bad_gs"), l))
+	}
+	prof.GS, prof.Char, prof.Server = gs, cleanChar(first(values["char"])), cleanChar(first(values["server"]))
+	return b.updateProfile(i, prof)
+}
+
+// updateProfile saves a profile and redraws the panel it was changed on.
+func (b *Bot) updateProfile(i *discordgo.Interaction, prof lfg.Profile) error {
+	l := lang(i)
+	if err := b.store.SetProfile(prof); err != nil {
+		b.update(i, notice(colorClosed, errorText(err, l)))
+		return err
+	}
+	return b.update(i, b.profilePanel(prof, string(i.Locale), l.T("profile.saved_now"), l))
+}
+
+func (b *Bot) saveProfile(prof lfg.Profile) {
+	if err := b.store.SetProfile(prof); err != nil {
+		log.Printf("save profile of %s: %v", prof.UserID, err)
 	}
 }
 
@@ -108,51 +223,13 @@ func charSuffix(char string) string {
 	return " · " + charTag(char)
 }
 
-func (b *Bot) onProfileSubmit(i *discordgo.Interaction) error {
-	userID, _ := interactionUser(i)
-	l := lang(i)
-	values := modalValues(i.ModalSubmitData().Components)
-	classID, roleID, _ := strings.Cut(first(values["choice"]), "|")
-	gs, err := parseGS(first(values["gs"]))
-	switch {
-	case !b.game.Fits([]string{config.AnyID}, classID, roleID):
-		return b.reply(i, notice(colorClosed, l.T("profile.bad_choice")))
-	case err != nil:
-		return b.reply(i, notice(colorClosed, l.T("profile.bad_gs")))
-	}
-
-	tz := first(values["tz"])
-	if !slices.Contains(timeZones, tz) {
-		tz = ""
-	}
-	prof := lfg.Profile{UserID: userID, ClassID: classID, RoleID: roleID, GS: gs, TimeZone: tz,
-		Char: cleanChar(first(values["char"])), SkipReminders: first(values["remind"]) == "off"}
-	if err := b.store.SetProfile(prof); err != nil {
-		b.reply(i, notice(colorClosed, errorText(err, l)))
-		return err
-	}
-	saved := b.choiceText(classID, roleID)
-	if prof.Char != "" {
-		saved += " · 🎮 " + charTag(prof.Char)
-	}
-	if gs > 0 {
-		saved += " · GS " + l.GS(gs)
-	}
-	if tz != "" {
-		saved += " · 🕒 " + l.T("tz."+tz)
-	}
-	if prof.SkipReminders {
-		saved += " · 🔕"
-	}
-	return b.reply(i, notice(colorOpen, l.T("profile.saved", saved)+l.T("profile.saved_hint")))
-}
-
-// rememberJoin keeps the player's profile current: the gear score and
-// character name follow their latest join, while a main role and class
-// they saved themselves stays.
-func (b *Bot) rememberJoin(pl lfg.Player) {
+// rememberJoin keeps the player's profile current: the gear score,
+// character name, faction and game server follow their latest join, as
+// they belong to the character they joined with, while a main role and
+// class they saved themselves stays.
+func (b *Bot) rememberJoin(pl lfg.Player, faction, server string) {
 	prof, ok := b.store.Profile(pl.UserID)
-	if ok && pl.GS == 0 && pl.Char == "" {
+	if ok && pl.GS == 0 && pl.Char == "" && faction == "" && server == "" {
 		return
 	}
 	if !ok {
@@ -164,9 +241,13 @@ func (b *Bot) rememberJoin(pl lfg.Player) {
 	if pl.Char != "" {
 		prof.Char = pl.Char
 	}
-	if err := b.store.SetProfile(prof); err != nil {
-		log.Printf("save profile of %s: %v", pl.UserID, err)
+	if faction != "" {
+		prof.Faction = faction
 	}
+	if server != "" {
+		prof.Server = server
+	}
+	b.saveProfile(prof)
 }
 
 // profileChoice is the class/role pair a player saved, as menus use it.

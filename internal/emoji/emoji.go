@@ -1,7 +1,7 @@
 // Package emoji uploads the icons bundled with the bot as application
-// emojis, which the bot can show on every server: the role and class
-// icons, the crown that marks a party's leader, and the interface icons
-// that stand in for the emojis in its messages.
+// emojis, which the bot can show on every server: the role, class and
+// faction icons, the crown that marks a party's leader, and the interface
+// icons that stand in for the emojis in its messages.
 package emoji
 
 import (
@@ -17,10 +17,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// images holds one 128×128 PNG per role or class, named after its id in
-// game.json, e.g. tank.png or gladiator.png, and leader.png. images/ui
-// holds the interface icons, drawn by tools/icons; their ids start with
-// "ui_", e.g. ui_join.
+// images holds one 128×128 PNG per role, class or faction, named after its
+// id in game.json, e.g. tank.png, gladiator.png or elyos.png, and
+// leader.png. images/ui holds the interface icons; tools/icons draws them
+// and the faction icons. The interface icons' ids start with "ui_", e.g.
+// ui_join.
 //
 //go:embed images/*.png images/ui/*.png
 var images embed.FS

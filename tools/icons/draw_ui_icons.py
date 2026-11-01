@@ -1,4 +1,5 @@
-"""Draws the bot's interface icons in the style of its role and class icons.
+"""Draws the bot's interface icons in the style of its role and class icons,
+and the faction icons that sit next to those.
 
 Each icon is a 128x128 PNG: a rounded square (or a circle, like the class
 icons) with a darker rim and a soft top-to-bottom gradient, carrying a bold
@@ -8,8 +9,9 @@ They are drawn at 4x and scaled down.
     python tools/icons/draw_ui_icons.py                  # writes internal/emoji/images/ui
     python tools/icons/draw_ui_icons.py --sheet out.png  # and a preview next to the others
 
-The file names are the ids internal/bot/icons.go maps the bot's emojis to.
-Pillow is the only requirement.
+The file names are the ids internal/bot/icons.go maps the bot's emojis to;
+the faction icons go to internal/emoji/images, named after their id in
+game.json. Pillow is the only requirement.
 """
 
 import colorsys
@@ -548,6 +550,35 @@ def unknown(g):  # question mark
     g.circle((64, 93), 6.5)
 
 
+def blocked(g):  # no entry
+    g.circle((64, 64), 33)
+    g.right()
+    g.rrect((40, 57, 88, 71), 5, cut=True)
+
+
+def sparkle(g, c, r, tint=False):  # a four-pointed star
+    x, y = c
+    w = r * 0.28
+    g.poly([(x, y - r), (x + w, y - w), (x + r, y), (x + w, y + w), (x, y + r), (x - w, y + w), (x - r, y), (x - w, y - w)],
+           tint=tint)
+
+
+def elyos(g):  # the sun: the Elyos live in the light
+    g.circle((64, 64), 18)
+    for i in range(8):
+        a = math.radians(i * 45 - 90)
+        g.capsule((64 + 28 * math.cos(a), 64 + 28 * math.sin(a)), (64 + 38 * math.cos(a), 64 + 38 * math.sin(a)), 8.5)
+    g.right()
+
+
+def asmodian(g):  # the moon: the Asmodians live in the dark
+    g.circle((58, 66), 32)
+    g.circle((76, 54), 26, cut=True)
+    g.shade([(0, 82), (128, 82), (128, 128), (0, 128)])
+    sparkle(g, (88, 84), 11, tint=True)
+    sparkle(g, (96, 30), 7)
+
+
 ICONS = {
     "join": (GREEN, join), "reserve": (BLUE, reserve), "manage": (SLATE, manage), "start": (TEAL, start),
     "ok": (GREEN, ok), "waiting": (GOLD, waiting), "expired": (SLATE, expired), "closed": (SLATE, closed),
@@ -561,7 +592,14 @@ ICONS = {
     "help": (NAVY, help_), "admin": (SLATE, admin), "legend": (PURPLE, legend),
     "unknown": (SLATE, unknown, "circle"),
     "castle": (NAVY, castle), "boss": (RED, boss), "portal": (PURPLE, portal), "flag": (ORANGE, flag),
-    "loot": (GOLD, loot),
+    "loot": (GOLD, loot), "blocked": (RED, blocked),
+}
+
+# Game icons sit next to the role and class icons in internal/emoji/images,
+# named after their id in game.json, and replace the emoji there the same
+# way. The factions are circles, like the classes.
+GAME_ICONS = {
+    "elyos": (SKY, elyos, "circle"), "asmodian": ("6c3fb4", asmodian, "circle"),
 }
 
 
@@ -583,8 +621,11 @@ def sheet(path, root, icons):
 
 def main():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    out = os.path.join(root, "internal", "emoji", "images", "ui")
+    images = os.path.join(root, "internal", "emoji", "images")
+    out = os.path.join(images, "ui")
     os.makedirs(out, exist_ok=True)
+    for name, (color, fn, *shape) in GAME_ICONS.items():
+        render(color, fn, *shape).save(os.path.join(images, name + ".png"), optimize=True)
     icons = {}
     for name, (color, fn, *shape) in ICONS.items():
         icons[name] = render(color, fn, *shape)

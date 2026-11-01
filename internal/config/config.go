@@ -77,6 +77,14 @@ func (c Class) mainRole() string {
 	return ""
 }
 
+// Faction is a side of the game, such as the Elyos or the Asmodians. Each
+// game server holds one faction, so a party is always of one faction.
+type Faction struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Emoji string `json:"emoji,omitempty"`
+}
+
 type Game struct {
 	PostTTLHours int `json:"post_ttl_hours"`
 	MaxMissing   int `json:"max_missing"`
@@ -87,9 +95,12 @@ type Game struct {
 	ReminderMinutes int       `json:"reminder_minutes"`
 	Dungeons        []Dungeon `json:"dungeons"`
 	// Abyss lists the Abyss events and invasions, posted with /lfg-abyss.
-	Abyss   []Dungeon `json:"abyss,omitempty"`
-	Roles   []Role    `json:"roles"`
-	Classes []Class   `json:"classes"`
+	Abyss []Dungeon `json:"abyss,omitempty"`
+	// Factions are the sides a post is for. Without them, posts don't say,
+	// and anyone can join any post.
+	Factions []Faction `json:"factions,omitempty"`
+	Roles    []Role    `json:"roles"`
+	Classes  []Class   `json:"classes"`
 	// LeaderEmoji marks the leader of a party.
 	LeaderEmoji string `json:"-"`
 }
@@ -188,6 +199,15 @@ func (g *Game) validate() error {
 			if m.PartySize == 1 || m.PartySize < 0 || m.GS < 0 {
 				return fmt.Errorf("dungeon %q mode %q: party_size must be at least 2 and gs not negative", d.ID, m.ID)
 			}
+		}
+	}
+	if len(g.Factions) == 1 || len(g.Factions) > maxSelectOptions {
+		return fmt.Errorf("need no factions, or between 2 and %d, got %d", maxSelectOptions, len(g.Factions))
+	}
+	factions := map[string]bool{}
+	for _, f := range g.Factions {
+		if err := checkEntry("faction", f.ID, f.Name, factions); err != nil {
+			return err
 		}
 	}
 	// Roles and classes share the "Looking for" menu, so their IDs must not
@@ -315,12 +335,17 @@ func (g *Game) Class(id string) (Class, bool) {
 	return Class{}, false
 }
 
-// UseIcons replaces the emoji of each role and class that has an icon,
-// keyed by its id, and the leader's crown with the "leader" icon. The
-// emoji from game.json stays for the others.
+// UseIcons replaces the emoji of each role, class and faction that has an
+// icon, keyed by its id, and the leader's crown with the "leader" icon.
+// The emoji from game.json stays for the others.
 func (g *Game) UseIcons(icons map[string]string) {
 	if e, ok := icons["leader"]; ok {
 		g.LeaderEmoji = e
+	}
+	for i, f := range g.Factions {
+		if e, ok := icons[f.ID]; ok {
+			g.Factions[i].Emoji = e
+		}
 	}
 	for i, r := range g.Roles {
 		if e, ok := icons[r.ID]; ok {
@@ -343,6 +368,15 @@ func (g *Game) Backup(classID, roleID string) (instead string, ok bool) {
 		return "", false
 	}
 	return c.mainRole(), true
+}
+
+func (g *Game) Faction(id string) (Faction, bool) {
+	for _, f := range g.Factions {
+		if f.ID == id {
+			return f, true
+		}
+	}
+	return Faction{}, false
 }
 
 func (g *Game) ClassOrUnknown(id string) Class {

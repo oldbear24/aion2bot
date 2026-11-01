@@ -42,6 +42,9 @@ func iconBot(t *testing.T) *Bot {
 	for _, c := range b.game.Classes {
 		icons[c.ID] = "<:" + c.ID + ":1234567890123456789>"
 	}
+	for _, f := range b.game.Factions {
+		icons[f.ID] = "<:" + f.ID + ":1234567890123456789>"
+	}
 	icons["leader"] = "<:leader:1234567890123456789>"
 	b.game.UseIcons(icons)
 	return b
@@ -201,9 +204,16 @@ func TestModalsFitDiscordLimits(t *testing.T) {
 	b := testBot(t)
 	d := draft{LookingFor: []string{config.AnyID}, Missing: 1}
 	b.selectDungeon(&d, "krao-cave")
+	abyss := draft{Abyss: true, LookingFor: []string{config.AnyID}}
+	b.selectDungeon(&abyss, "artifact-siege")
 	prof := lfg.Profile{ClassID: "gladiator", RoleID: "tank", GS: 99999}
+	// A rally of a faction and game server the profile doesn't have asks
+	// the most when joining.
+	r := rally(0, 1)
+	r.Faction, r.Server = "elyos", strings.Repeat("S", maxChar)
 	for _, lang := range i18n.Langs {
-		for _, m := range []modal{b.detailsModal(d, lang), b.joinModal(busyPost(b), prof, lang), b.profileModal(prof, lang)} {
+		for _, m := range []modal{b.detailsModal(d, lang), b.detailsModal(abyss, lang), b.editModal(r, time.UTC, lang),
+			b.joinModal(busyPost(b), prof, lang), b.joinModal(r, prof, lang), b.profileForm(prof, lang)} {
 			if len(m.Components) > 5 || len([]rune(m.Title)) > 45 || len(m.CustomID) > 100 {
 				t.Fatalf("%s modal %q has %d components", lang, m.Title, len(m.Components))
 			}
@@ -230,7 +240,10 @@ func TestOtherPanelsFitDiscordLimits(t *testing.T) {
 	}
 	for _, l := range i18n.Langs {
 		for name, panel := range map[string]discordgo.MessageComponent{
-			"confirm delete": b.confirmDelete(p, l),
+			"confirm delete": b.confirmDelete(p, false, l),
+			"mod delete":     b.confirmDelete(p, true, l),
+			"hand over":      b.handOverPanel(p, p.Accepted[0].UserID, true, l),
+			"mod hand over":  b.handOverPanel(p, p.Accepted[0].UserID, false, l),
 			"too many runs":  b.tooManyRuns(open, l),
 			"help":           b.helpPanel(l, false),
 			"admin help":     b.helpPanel(l, true),
@@ -518,9 +531,9 @@ func TestDraftStartsWithNothingPicked(t *testing.T) {
 	if !postDisabled(panel) {
 		t.Error("Post must stay disabled until the leader says who they need")
 	}
-	d.LookingFor = []string{"tank"}
+	d.LookingFor, d.Faction = []string{"tank"}, "elyos"
 	if postDisabled(b.draftPanel(d, i18n.English)) {
-		t.Error("Post should be enabled with a dungeon and a role chosen")
+		t.Error("Post should be enabled with a dungeon, a role and a faction chosen")
 	}
 }
 

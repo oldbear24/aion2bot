@@ -20,7 +20,7 @@ var uiIcons = map[string]string{
 	"⚠️": "warning", "💠": "crystal", "⚓": "anchor", "🏛️": "temple", "🔔": "alert", "🔕": "alert_off",
 	"🔎": "find", "📊": "stats", "🔗": "link", "📌": "pin", "🌐": "language", "👥": "players", "🏆": "top",
 	"🏠": "server", "⏱️": "timer", "🟢": "open", "📖": "help", "🛠️": "admin", "🔣": "legend", "❔": "unknown",
-	"🏰": "castle", "👹": "boss", "🌌": "portal", "🚩": "flag", "💰": "loot",
+	"🏰": "castle", "👹": "boss", "🌌": "portal", "🚩": "flag", "💰": "loot", "⛔": "blocked",
 }
 
 // iconPrefix marks the interface icons among the uploaded ones, whose ids

@@ -111,7 +111,16 @@ func TestEditModal(t *testing.T) {
 
 func TestUseIcons(t *testing.T) {
 	b := testBot(t)
-	b.game.UseIcons(map[string]string{"tank": "<:lfg_tank_abc:1>", "cleric": "<:lfg_cleric_abc:2>"})
+	b.game.UseIcons(map[string]string{"tank": "<:lfg_tank_abc:1>", "cleric": "<:lfg_cleric_abc:2>", "elyos": "<:lfg_elyos_abc:3>"})
+	if got := b.factionTag("elyos"); got != "<:lfg_elyos_abc:3> Elyos" {
+		t.Errorf("faction with an icon: %q", got)
+	}
+	if got := b.factionTag("asmodian"); got != "🌙 Asmodian" {
+		t.Errorf("faction without an icon keeps its emoji: %q", got)
+	}
+	if opts := b.factionOptions("elyos"); opts[0].Emoji == nil || opts[0].Emoji.ID != "3" || !opts[0].Default {
+		t.Errorf("faction menu option %+v", opts[0])
+	}
 	if r, _ := b.game.Role("tank"); r.Emoji != "<:lfg_tank_abc:1>" {
 		t.Errorf("tank emoji %q", r.Emoji)
 	}

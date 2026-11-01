@@ -186,6 +186,10 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 			err = b.cmdFind(i)
 		case "lfg-notify":
 			err = b.cmdNotify(i)
+		case "lfg-mine":
+			err = b.cmdMine(i)
+		case "lfg-blocks":
+			err = b.cmdBlocks(i)
 		case "lfg-stats":
 			err = b.cmdStats(i)
 		case "lfg-setup":
@@ -228,6 +232,10 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 			err = b.onDraft(i, field, data.Values, true)
 		} else if field, ok := strings.CutPrefix(data.CustomID, alertPrefix); ok {
 			err = b.onAlert(i, field, data.Values)
+		} else if field, ok := strings.CutPrefix(data.CustomID, profilePrefix); ok {
+			err = b.onProfile(i, field, data.Values)
+		} else if field, ok := strings.CutPrefix(data.CustomID, blocksPrefix); ok {
+			err = b.onBlocks(i, field, data.Values)
 		} else if data.CustomID == idFindJoin {
 			err = b.onFindJoin(i, data.Values)
 		} else if action, postID, ok := parseCustomID(data.CustomID); ok {

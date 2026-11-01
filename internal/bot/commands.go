@@ -43,6 +43,7 @@ func commandList(game *config.Game) []*discordgo.ApplicationCommand {
 			}),
 		),
 		command("lfg-notify", "cmd.notify", nil, guildOnly),
+		command("lfg-mine", "cmd.mine", nil, guildAndDM),
 		command("lfg-stats", "cmd.stats", nil, guildOnly,
 			option(discordgo.ApplicationCommandOptionInteger, "days", "cmd.stats.days", false, func(o *discordgo.ApplicationCommandOption) {
 				o.Choices = periods
@@ -69,6 +70,9 @@ func commandList(game *config.Game) []*discordgo.ApplicationCommand {
 			}),
 		),
 		command("lfg-disable", "cmd.disable", &manageServer, guildOnly),
+		// Moderators block players from a post's ⚙️ Manage; this lists the
+		// blocks and lifts them.
+		command("lfg-blocks", "cmd.blocks", &manageMessages, guildOnly),
 		networkCommand(&manageServer, guildOnly),
 	}
 	// Without Abyss events in game.json, there is nothing to post with it.

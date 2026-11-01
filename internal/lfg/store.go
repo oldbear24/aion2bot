@@ -38,6 +38,10 @@ type Profile struct {
 	Char string
 	// SkipReminders turns off the ping shortly before a run starts.
 	SkipReminders bool
+	// Faction is the side the player's character is on; Server is its game
+	// server, as they wrote it.
+	Faction string
+	Server  string
 }
 
 const schema = `
@@ -145,12 +149,22 @@ CREATE TABLE IF NOT EXISTS alerts (
 	choices    TEXT NOT NULL,
 	updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS alerts_by_guild ON alerts (guild_id);`
+CREATE INDEX IF NOT EXISTS alerts_by_guild ON alerts (guild_id);
+CREATE TABLE IF NOT EXISTS blocks (
+	scope      TEXT NOT NULL,
+	user_id    TEXT NOT NULL,
+	name       TEXT NOT NULL,
+	blocked_by TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	PRIMARY KEY (scope, user_id)
+);
+CREATE INDEX IF NOT EXISTS blocks_by_user ON blocks (user_id);`
 
 var postColumns = []string{
 	"id", "leader_id", "leader_name", "guild_id", "guild_name", "dungeon_id", "mode_id", "min_gs", "looking_for",
 	"missing", "start", "note", "status", "created_at", "expires_at", "closed_at", "revision", "pinged", "start_at",
 	"leader_char", "filled_at", "reminded", "leader_class", "leader_role", "leader_gs", "rally", "size",
+	"faction", "server", "hidden",
 }
 
 var (
@@ -217,6 +231,11 @@ var migrations = []string{
 	`UPDATE posts SET (leader_class, leader_role, leader_gs) =
 		(SELECT class_id, role_id, gs FROM profiles WHERE profiles.user_id = posts.leader_id)
 		WHERE leader_class = '' AND leader_id IN (SELECT user_id FROM profiles WHERE class_id != '')`,
+	`ALTER TABLE posts ADD COLUMN faction TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE posts ADD COLUMN server TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE posts ADD COLUMN hidden TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE profiles ADD COLUMN faction TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE profiles ADD COLUMN server TEXT NOT NULL DEFAULT ''`,
 }
 
 func migrate(db *sql.DB) error {
@@ -319,6 +338,13 @@ func (s *Store) ShownPosts() []Post {
 	return s.postsWhere(`SELECT id FROM posts ORDER BY created_at, id`)
 }
 
+// PostsOf lists the posts still shown that a player leads or is on, in any
+// way: in the party, waiting for the leader or as a reserve.
+func (s *Store) PostsOf(userID string) []Post {
+	return s.postsWhere(`SELECT id FROM posts WHERE leader_id = ? OR id IN (SELECT post_id FROM players WHERE user_id = ?)
+		ORDER BY created_at, id`, userID, userID)
+}
+
 func (s *Store) postsWhere(query string, args ...any) []Post {
 	ids, err := queryIDs(s.db, query, args...)
 	if err != nil {
@@ -393,6 +419,23 @@ func (s *Store) ReopenPost(id string, maxActive int, ttl time.Duration, now time
 	})
 }
 
+// HandOverPost runs fn, which hands a post over to userID (see
+// Post.HandOver), like UpdatePost, unless they already lead maxActive
+// open posts.
+func (s *Store) HandOverPost(id, userID string, maxActive int, fn func(p *Post) error) (Post, error) {
+	return s.updatePost(id, func(tx *sql.Tx, p *Post) error {
+		var busy int
+		err := tx.QueryRow(`SELECT COUNT(*) FROM posts WHERE leader_id = ? AND status IN `+activeStatuses, userID).Scan(&busy)
+		if err != nil {
+			return err
+		}
+		if busy >= maxActive {
+			return ErrTooManyPosts
+		}
+		return fn(p)
+	})
+}
+
 func (s *Store) updatePost(id string, fn func(tx *sql.Tx, p *Post) error) (Post, error) {
 	var result Post
 	err := s.inTx(func(tx *sql.Tx) error {
@@ -446,6 +489,14 @@ func (s *Store) AddMessages(id string, refs []MessageRef) (Post, bool) {
 func (s *Store) RemoveMessage(id, messageID string) {
 	if _, err := s.db.Exec(`DELETE FROM messages WHERE post_id = ? AND message_id = ?`, id, messageID); err != nil {
 		log.Printf("store: forget message %s: %v", messageID, err)
+	}
+}
+
+// RemoveMessagesIn forgets the copy of a post on one Discord server and
+// the bot's messages in its thread.
+func (s *Store) RemoveMessagesIn(id, guildID string) {
+	if _, err := s.db.Exec(`DELETE FROM messages WHERE post_id = ? AND guild_id = ?`, id, guildID); err != nil {
+		log.Printf("store: forget messages of post %s in guild %s: %v", id, guildID, err)
 	}
 }
 
@@ -656,8 +707,9 @@ func (s *Store) DeletePost(id string) {
 
 func (s *Store) Profile(userID string) (Profile, bool) {
 	p := Profile{UserID: userID}
-	err := s.db.QueryRow(`SELECT class_id, role_id, gs, timezone, char_name, skip_reminders FROM profiles WHERE user_id = ?`, userID).
-		Scan(&p.ClassID, &p.RoleID, &p.GS, &p.TimeZone, &p.Char, &p.SkipReminders)
+	err := s.db.QueryRow(`SELECT class_id, role_id, gs, timezone, char_name, skip_reminders, faction, server
+		FROM profiles WHERE user_id = ?`, userID).
+		Scan(&p.ClassID, &p.RoleID, &p.GS, &p.TimeZone, &p.Char, &p.SkipReminders, &p.Faction, &p.Server)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			log.Printf("store: load profile %s: %v", userID, err)
@@ -668,12 +720,14 @@ func (s *Store) Profile(userID string) (Profile, bool) {
 }
 
 func (s *Store) SetProfile(p Profile) error {
-	_, err := s.db.Exec(`INSERT INTO profiles (user_id, class_id, role_id, gs, timezone, char_name, skip_reminders, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO profiles (user_id, class_id, role_id, gs, timezone, char_name, skip_reminders, faction, server,
+			updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET class_id = excluded.class_id, role_id = excluded.role_id,
 			gs = excluded.gs, timezone = excluded.timezone, char_name = excluded.char_name,
-			skip_reminders = excluded.skip_reminders, updated_at = excluded.updated_at`,
-		p.UserID, p.ClassID, p.RoleID, p.GS, p.TimeZone, p.Char, p.SkipReminders, millis(time.Now()))
+			skip_reminders = excluded.skip_reminders, faction = excluded.faction, server = excluded.server,
+			updated_at = excluded.updated_at`,
+		p.UserID, p.ClassID, p.RoleID, p.GS, p.TimeZone, p.Char, p.SkipReminders, p.Faction, p.Server, millis(time.Now()))
 	return err
 }
 
@@ -770,12 +824,13 @@ type querier interface {
 
 func loadPost(q querier, id string) (*Post, error) {
 	var p Post
-	var lookingFor, pinged string
+	var lookingFor, pinged, hidden string
 	var created, expires, closed, startAt, filled int64
 	err := q.QueryRow(selectPost+" WHERE id = ?", id).Scan(
 		&p.ID, &p.LeaderID, &p.LeaderName, &p.GuildID, &p.GuildName, &p.DungeonID, &p.ModeID, &p.MinGS, &lookingFor,
 		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt,
-		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS, &p.Rally, &p.Size)
+		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS, &p.Rally, &p.Size,
+		&p.Faction, &p.Server, &hidden)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -787,6 +842,9 @@ func loadPost(q querier, id string) (*Post, error) {
 	}
 	if err := json.Unmarshal([]byte(pinged), &p.Pinged); err != nil {
 		return nil, fmt.Errorf("post %s pinged: %w", id, err)
+	}
+	if err := json.Unmarshal([]byte(hidden), &p.Hidden); err != nil {
+		return nil, fmt.Errorf("post %s hidden: %w", id, err)
 	}
 	p.CreatedAt, p.ExpiresAt, p.ClosedAt = fromMillis(created), fromMillis(expires), fromMillis(closed)
 	p.StartAt, p.FilledAt = fromMillis(startAt), fromMillis(filled)
@@ -844,11 +902,15 @@ func writePost(tx *sql.Tx, p *Post) error {
 	if err != nil {
 		return err
 	}
+	hidden, err := json.Marshal(append([]string{}, p.Hidden...))
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(upsertPost,
 		p.ID, p.LeaderID, p.LeaderName, p.GuildID, p.GuildName, p.DungeonID, p.ModeID, p.MinGS, string(lookingFor),
 		p.Missing, p.Start, p.Note, p.Status, millis(p.CreatedAt), millis(p.ExpiresAt), millis(p.ClosedAt), p.Revision,
 		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded, p.LeaderClass, p.LeaderRole,
-		p.LeaderGS, p.Rally, p.Size)
+		p.LeaderGS, p.Rally, p.Size, p.Faction, p.Server, string(hidden))
 	if err != nil {
 		return err
 	}

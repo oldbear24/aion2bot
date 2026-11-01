@@ -56,8 +56,8 @@ func (b *Bot) onFindJoin(i *discordgo.Interaction, values []string) error {
 }
 
 // canJoin reports whether a player could join a post: it still takes
-// players, they aren't on it yet, and the class and gear score they saved
-// in /profile, if any, fit.
+// players, they aren't on it yet, and the class, gear score, faction and
+// game server they saved in /profile, if any, fit.
 func (b *Bot) canJoin(p lfg.Post, userID string, prof lfg.Profile) bool {
 	switch {
 	case !p.Active() || p.Crowded() || userID == p.LeaderID || p.Has(userID):
@@ -65,6 +65,8 @@ func (b *Bot) canJoin(p lfg.Post, userID string, prof lfg.Profile) bool {
 	case prof.GS > 0 && prof.GS < p.MinGS:
 		return false
 	case prof.ClassID != "" && !b.classFits(p.LookingFor, prof.ClassID):
+		return false
+	case !sideFits(p, prof.Faction, prof.Server):
 		return false
 	}
 	return true
@@ -104,6 +106,7 @@ func (b *Bot) findPanel(found []lfg.Post, guildID string, prof lfg.Profile, l i1
 		if prof.GS > 0 {
 			basis += " · GS " + l.GS(prof.GS)
 		}
+		basis = withSide(basis, b.factionTag(prof.Faction))
 		head += "\n" + l.T("find.matched", basis, b.cmd("profile"))
 	} else {
 		head += "\n" + l.T("find.no_profile", b.cmd("profile"))
@@ -117,7 +120,7 @@ func (b *Bot) findPanel(found []lfg.Post, guildID string, prof lfg.Profile, l i1
 	for n, p := range found[:min(len(found), findLimit)] {
 		dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 		entry := fmt.Sprintf("\n**%d. %s**", n+1, strings.TrimSpace(dungeon.Emoji+" "+dungeon.Name))
-		if line := difficultyLine(dungeon, p.ModeID, p.MinGS, l); line != "" {
+		if line := withSide(difficultyLine(dungeon, p.ModeID, p.MinGS, l), b.sideLine(p, l)); line != "" {
 			entry += " · " + line
 		}
 		entry += "\n" + b.statusLine(p, l) + "\n🕒 " + postStart(p, l) + " · " + b.game.LeaderEmoji + " " + escape(truncate(p.LeaderName, 32))

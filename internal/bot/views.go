@@ -50,6 +50,15 @@ const (
 	actMoveMode  = "movemode"
 	actMoveYes   = "moveyes"
 	actSize      = "size"
+	actLooking   = "looking"
+	// The handover carries the new leader after the post's ID, and on the
+	// confirm buttons whether the old one stays: ":<userID>:stay".
+	actHandTo  = "handto"
+	actHandYes = "handyes"
+	// Moderators of a server the post shows on.
+	actHide     = "hide"
+	actBlock    = "block"
+	actNetBlock = "netblock"
 )
 
 // The /lfg panel uses "lfgd:<field>", the /lfg-abyss panel "lfga:<field>".
@@ -63,6 +72,7 @@ const (
 	fieldMissing     = "missing"
 	fieldSize        = "size"
 	fieldPlays       = "plays"
+	fieldFaction     = "faction"
 	fieldDetails     = "details"
 	fieldPost        = "post"
 	fieldCancel      = "cancel"
@@ -117,7 +127,7 @@ func (b *Bot) guildLang(guildID string) i18n.Lang {
 func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []discordgo.MessageComponent {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	header := "## " + strings.TrimSpace(dungeon.Emoji+" "+dungeon.Name)
-	if line := difficultyLine(dungeon, p.ModeID, p.MinGS, l); line != "" {
+	if line := withSide(difficultyLine(dungeon, p.ModeID, p.MinGS, l), b.sideLine(p, l)); line != "" {
 		header += "\n" + line
 	}
 	header += "\n" + b.statusLine(p, l)
@@ -343,14 +353,23 @@ func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
 		text(l.T("draft.plays")),
 		selectRow(id(fieldPlays), l.T("draft.plays_ph"), 1,
 			b.choiceOptions(b.game.Choices([]string{config.AnyID}), profileChoice(lfg.Profile{ClassID: d.Class, RoleID: d.Role}))),
-		divider(),
 	)
+	if len(b.game.Factions) > 0 {
+		comps = append(comps,
+			text(l.T("draft.faction")),
+			selectRow(id(fieldFaction), l.T("draft.faction_ph"), 1, b.factionOptions(d.Faction)))
+	}
+	comps = append(comps, divider())
 
 	start := startText(d.StartAt, "", l)
 	if d.Abyss && d.StartAt.IsZero() {
 		start = l.T("card.abyss_start_default")
 	}
-	comps = append(comps, text(detailsSummary(d.MinGS, b.gameMinGS(d), start, d.Note, l)))
+	summary := detailsSummary(d.MinGS, b.gameMinGS(d), start, d.Note, l)
+	if d.Abyss {
+		summary += "\n" + serverSummary(d.Server, l)
+	}
+	comps = append(comps, text(summary))
 	if d.Problem != "" {
 		comps = append(comps, text("⚠️ "+l.T(d.Problem)))
 	}
@@ -359,7 +378,7 @@ func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
 		discordgo.Button{CustomID: id(fieldDetails), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
 			Emoji: emoji("✏️")},
 		discordgo.Button{CustomID: id(fieldPost), Label: l.T("draft.post"), Style: discordgo.SuccessButton,
-			Emoji: emoji("📣"), Disabled: !chosen || len(d.LookingFor) == 0},
+			Emoji: emoji("📣"), Disabled: !chosen || len(d.LookingFor) == 0 || b.needsFaction(d.Faction)},
 		discordgo.Button{CustomID: id(fieldCancel), Label: l.T("draft.cancel"), Style: discordgo.SecondaryButton},
 	}})
 	return container(colorOpen, comps...)
@@ -378,20 +397,40 @@ func sizeOptions(selected, least int, l i18n.Lang) []discordgo.SelectMenuOption 
 	return opts
 }
 
+// needsFaction reports whether a post still has to say which faction it is
+// for: whenever game.json lists factions.
+func (b *Bot) needsFaction(faction string) bool {
+	return len(b.game.Factions) > 0 && b.knownFaction(faction) == ""
+}
+
+// serverSummary is the game server line of a rally's details.
+func serverSummary(server string, l i18n.Lang) string {
+	return l.T("draft.server", orDefault(escape(server), l.T("draft.server_none")))
+}
+
 func (b *Bot) detailsModal(d draft, l i18n.Lang) modal {
-	return detailsForm(draftID(fieldDetails, d.Abyss), b.gameMinGS(d), d.MinGS, d.StartInput, d.zone(), d.Note, l)
+	var server *string
+	if d.Abyss {
+		server = &d.Server
+	}
+	return detailsForm(draftID(fieldDetails, d.Abyss), b.gameMinGS(d), d.MinGS, d.StartInput, d.zone(), d.Note, server, l)
 }
 
 // editModal is the same form for a post that is already up, filled in
 // with its current details.
 func (b *Bot) editModal(p lfg.Post, zone *time.Location, l i18n.Lang) modal {
 	m, _ := b.game.DungeonOrUnknown(p.DungeonID).Mode(p.ModeID)
-	return detailsForm(customID(actEditForm, p.ID), m.GS, p.MinGS, startInput(p.StartAt, zone), zone, p.Note, l)
+	var server *string
+	if p.Rally {
+		server = &p.Server
+	}
+	return detailsForm(customID(actEditForm, p.ID), m.GS, p.MinGS, startInput(p.StartAt, zone), zone, p.Note, server, l)
 }
 
-// detailsForm asks for the minimum gear score, the start and a note.
-// gameGS is what the game asks for the difficulty, shown as a hint.
-func detailsForm(id string, gameGS, minGS int, start string, zone *time.Location, note string, l i18n.Lang) modal {
+// detailsForm asks for the minimum gear score, the start and a note, and
+// for a rally, which takes server, the game server it gathers on. gameGS
+// is what the game asks for the difficulty, shown as a hint.
+func detailsForm(id string, gameGS, minGS int, start string, zone *time.Location, note string, server *string, l i18n.Lang) modal {
 	optional := false
 	gsHelp := l.T("details.gs_help")
 	if gameGS > 0 {
@@ -401,7 +440,7 @@ func detailsForm(id string, gameGS, minGS int, start string, zone *time.Location
 	if minGS > 0 {
 		gs = strconv.Itoa(minGS)
 	}
-	return modal{
+	m := modal{
 		CustomID: id,
 		Title:    l.T("details.title"),
 		Components: []discordgo.MessageComponent{
@@ -424,6 +463,10 @@ func detailsForm(id string, gameGS, minGS int, start string, zone *time.Location
 			},
 		},
 	}
+	if server != nil {
+		m.Components = append(m.Components, serverInput(*server, l.T("details.server_help"), false, l))
+	}
+	return m
 }
 
 // startInput writes a start the way the form reads it back, in the
@@ -466,7 +509,7 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 	if p.Status == lfg.StatusFull {
 		title = l.T("join.title_reserve", dungeon.Name)
 	}
-	return modal{
+	m := modal{
 		CustomID: customID(actJoinForm, p.ID),
 		Title:    truncate(title, 45),
 		Components: []discordgo.MessageComponent{
@@ -485,6 +528,20 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 			charInput(prof.Char, l),
 		},
 	}
+	// The faction and game server are asked only when the profile doesn't
+	// already say the player fits: on an alt, or before they saved them.
+	if f, ok := b.game.Faction(p.Faction); ok && prof.Faction != p.Faction {
+		m.Components = append(m.Components, discordgo.Label{
+			Label:       l.T("join.faction"),
+			Description: truncate(l.T("join.faction_help", f.Name), 100),
+			Component: modalSelect{CustomID: "faction", Placeholder: l.T("join.faction_ph"), MinValues: 1, MaxValues: 1,
+				Options: b.factionOptions(prof.Faction)},
+		})
+	}
+	if p.Rally && p.Server != "" && !sameServer(prof.Server, p.Server) {
+		m.Components = append(m.Components, serverInput(prof.Server, l.T("join.server_help", p.Server), true, l))
+	}
+	return m
 }
 
 // managePanel is the leader's private control panel for a post.
@@ -531,6 +588,7 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 		comps = append(comps, selectRow(customID(actKick, p.ID), l.T("manage.kick_ph"),
 			len(all), b.playerOptions(p, all, l)))
 	}
+	comps = append(comps, b.lookingAndHandOver(p, l)...)
 	comps = append(comps,
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.Button{CustomID: customID(actEdit, p.ID), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
@@ -563,6 +621,7 @@ func (b *Bot) rallyControls(p lfg.Post, deleteButton discordgo.Button, l i18n.La
 		all = all[max(0, len(all)-maxSelectValues):]
 		comps = append(comps, selectRow(customID(actKick, p.ID), l.T("manage.abyss_kick_ph"), len(all), b.playerOptions(p, all, l)))
 	}
+	comps = append(comps, b.lookingAndHandOver(p, l)...)
 	return append(comps,
 		text(l.T("draft.size")),
 		selectRow(customID(actSize, p.ID), l.T("draft.size_ph"), 1, sizeOptions(p.Size, len(p.Party()), l)),
@@ -579,11 +638,63 @@ func (b *Bot) rallyControls(p lfg.Post, deleteButton discordgo.Button, l i18n.La
 	)
 }
 
-// confirmDelete asks the leader before a post disappears everywhere.
-func (b *Bot) confirmDelete(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
+// lookingAndHandOver are the menus that change whom an open post is
+// looking for and hand it over to a party member. A rally offers the first
+// 25 to join, who have been with it the longest.
+func (b *Bot) lookingAndHandOver(p lfg.Post, l i18n.Lang) []discordgo.MessageComponent {
+	comps := []discordgo.MessageComponent{
+		text(l.T("draft.looking")),
+		selectRow(customID(actLooking, p.ID), l.T("draft.looking_ph"), maxSelectValues, b.lookingForOptions(p.LookingFor, l)),
+	}
+	if len(p.Accepted) > 0 {
+		comps = append(comps, b.handOverMenu(p, l.T("manage.hand_ph"), l))
+	}
+	return comps
+}
+
+// handOverMenu offers the party members who can take over a post.
+func (b *Bot) handOverMenu(p lfg.Post, placeholder string, l i18n.Lang) discordgo.ActionsRow {
+	return selectRow(customID(actHandTo, p.ID), placeholder, 1, b.playerOptions(p, p.Accepted, l))
+}
+
+// handOverPanel asks before a party member takes over a post: from the
+// leader, who stays in the party or leaves it, or from moderators, for
+// whom the leader may have gone missing.
+func (b *Bot) handOverPanel(p lfg.Post, userID string, byLeader bool, l i18n.Lang) discordgo.MessageComponent {
+	i := slices.IndexFunc(p.Accepted, func(pl lfg.Player) bool { return pl.UserID == userID })
+	if i < 0 || !p.Active() {
+		return notice(colorClosed, errorText(lfg.ErrNotInParty, l))
+	}
+	next := p.Accepted[i]
+	title, stay, leave := l.T("hand.title", b.game.LeaderEmoji, b.runName(p)), l.T("hand.stay"), l.T("hand.leave")
+	if !byLeader {
+		name := escape(truncate(p.LeaderName, 32))
+		title = l.T("hand.mod_title", b.game.LeaderEmoji, b.runName(p), name)
+		stay, leave = l.T("hand.mod_stay", p.LeaderName), l.T("hand.mod_leave", p.LeaderName)
+	}
+	confirm := func(how, label string, style discordgo.ButtonStyle) discordgo.Button {
+		return discordgo.Button{CustomID: customID(actHandYes, p.ID+":"+userID+":"+how), Label: truncate(label, 80), Style: style}
+	}
+	return container(statusColor(p.Status),
+		text(title+"\n"+l.T("hand.who", b.playerLine(p, next, l))+"\n"+l.T("hand.help")),
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			confirm("stay", stay, discordgo.SuccessButton),
+			confirm("leave", leave, discordgo.PrimaryButton),
+			discordgo.Button{CustomID: customID(actPanel, p.ID), Label: l.T("move.back"), Style: discordgo.SecondaryButton},
+		}},
+	)
+}
+
+// confirmDelete asks the leader, or a moderator, before a post disappears
+// everywhere.
+func (b *Bot) confirmDelete(p lfg.Post, mod bool, l i18n.Lang) discordgo.MessageComponent {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
+	ask := l.T("delete.confirm", escape(dungeon.Name))
+	if mod {
+		ask = l.T("delete.mod_confirm", escape(dungeon.Name), escape(p.LeaderName))
+	}
 	return container(colorClosed,
-		text(l.T("delete.confirm", escape(dungeon.Name))),
+		text(ask),
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.Button{CustomID: customID(actDeleteYes, p.ID), Label: l.T("delete.yes"), Style: discordgo.DangerButton},
 			discordgo.Button{CustomID: customID(actPanel, p.ID), Label: l.T("delete.keep"), Style: discordgo.SecondaryButton},
@@ -836,6 +947,9 @@ func (b *Bot) playerOptions(p lfg.Post, players []lfg.Player, l i18n.Lang) []dis
 		if r, ok := b.game.Role(b.shownRole(p, pl)); ok {
 			desc = r.Name + " · " + desc
 			icon = orDefault(r.Emoji, icon)
+		}
+		if pl.UserID == p.LeaderID {
+			icon = b.game.LeaderEmoji
 		}
 		if pl.GS > 0 {
 			desc += " · GS " + l.GS(pl.GS)

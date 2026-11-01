@@ -44,6 +44,30 @@ func TestEveryIconIsBundled(t *testing.T) {
 	}
 }
 
+// Each role, class and faction in game.json has an icon next to the
+// leader's crown, which replaces its emoji.
+func TestGameIconsAreBundled(t *testing.T) {
+	b := testBot(t)
+	var ids []string
+	for _, r := range b.game.Roles {
+		ids = append(ids, r.ID)
+	}
+	for _, c := range b.game.Classes {
+		ids = append(ids, c.ID)
+	}
+	for _, f := range b.game.Factions {
+		ids = append(ids, f.ID)
+	}
+	for _, id := range append(ids, "leader") {
+		if _, err := os.Stat("../emoji/images/" + id + ".png"); err != nil {
+			t.Errorf("%s has no icon: %v", id, err)
+		}
+		if n := len("lfg_" + id + "_1a2b3c"); n > 32 {
+			t.Errorf("icon %s makes a %d character emoji name", id, n)
+		}
+	}
+}
+
 func TestIconsReplaceEmojis(t *testing.T) {
 	b := testBot(t)
 	join, manage := testIcons.byKey["✋"], testIcons.byKey["⚙️"]

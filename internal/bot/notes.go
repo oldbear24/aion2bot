@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -107,6 +108,12 @@ func (b *Bot) changesNote(before, after lfg.Post, guildID string, l i18n.Lang) d
 	if before.Note != after.Note {
 		lines = append(lines, l.T("thread.note", orDefault(escape(after.Note), l.T("draft.no_note"))))
 	}
+	if !slices.Equal(before.LookingFor, after.LookingFor) {
+		lines = append(lines, l.T("thread.looking", b.lookingForList(after.LookingFor, l)))
+	}
+	if before.Server != after.Server {
+		lines = append(lines, serverSummary(after.Server, l))
+	}
 	leader := who(after.LeaderID, after.LeaderName, b.mentionable(after.LeaderID, after.GuildID, guildID))
 	return container(statusColor(after.Status),
 		text(l.T("thread.edited_title")+"\n"+l.T("thread.edited", leader)),
@@ -133,6 +140,27 @@ func (b *Bot) reopenNote(p lfg.Post, guildID string, l i18n.Lang) discordgo.Mess
 		text(l.T("thread.reopened_title")+"\n"+l.T("thread.reopened", leader)),
 		divider(),
 		text(b.statusLine(p, l)),
+	)
+}
+
+// handOverNote tells the threads a party member took over the post, and
+// the new leader, who is pinged with it, how to manage it. byGuild is the
+// server whose moderators handed it over, or empty for the old leader.
+func (b *Bot) handOverNote(before, after lfg.Post, stayed bool, byGuild, guildID string, l i18n.Lang) discordgo.MessageComponent {
+	next := who(after.LeaderID, after.LeaderName, b.mentionable(after.LeaderID, after.GuildID, guildID))
+	old := who(before.LeaderID, before.LeaderName, b.mentionable(before.LeaderID, before.GuildID, guildID))
+	what := l.T("thread.hand_left", old)
+	if stayed {
+		what = l.T("thread.hand_stayed", old)
+	}
+	what += "\n" + l.T("thread.hand_hint")
+	if byGuild != "" {
+		what += "\n" + l.T("thread.hand_by_mods", escape(orDefault(b.guildName(byGuild), byGuild)))
+	}
+	return container(statusColor(after.Status),
+		text(l.T("thread.hand_title", b.game.LeaderEmoji)+"\n"+l.T("thread.hand", next, b.runName(after), old)),
+		divider(),
+		discordgo.Section{Components: []discordgo.MessageComponent{text(what)}, Accessory: manageButton(after.ID, true, l)},
 	)
 }
 

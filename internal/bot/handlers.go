@@ -32,13 +32,36 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 		return b.onLeave(i, p, userID)
 	}
 
-	// Everything else belongs to the leader.
-	if userID != p.LeaderID {
+	// Everything else belongs to the leader, except what moderators may do
+	// (see moderation.go).
+	acc := b.access(i, p)
+	need := accessLeader
+	switch action {
+	case actManage, actPanel, actHide, actBlock, actNetBlock:
+		need = accessMod
+	case actClose, actDelete, actDeleteYes, actHandTo, actHandYes:
+		need = accessInCharge
+	}
+	if acc < need {
 		return b.reply(i, notice(colorClosed, l.T("manage.only_leader")))
 	}
 	switch action {
 	case actManage:
-		return b.reply(i, b.managePanel(p, l))
+		return b.reply(i, b.panelFor(i, p))
+	case actHide:
+		return b.onHide(i, p)
+	case actBlock, actNetBlock:
+		return b.onBlock(i, p, values, action == actNetBlock)
+	case actLooking:
+		return b.onLookingFor(i, p, values)
+	case actHandTo:
+		if !p.Active() {
+			return b.update(i, b.panelFor(i, p))
+		}
+		return b.update(i, b.handOverPanel(p, first(values), acc == accessLeader, l))
+	case actHandYes:
+		newLeader, how, _ := strings.Cut(pick, ":")
+		return b.onHandOver(i, p, newLeader, how == "stay")
 	case actAccept:
 		return b.onAccept(i, p, values)
 	case actKick:
@@ -57,14 +80,18 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 	case actSize:
 		return b.onSize(i, p, first(values))
 	case actClose:
-		return b.leaderUpdate(i, p.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) })
+		after, err := b.leaderChange(i, p.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) })
+		if acc != accessLeader && p.Active() && after.ID != "" && !after.Active() {
+			b.tellLeader(after, i.GuildID, "dm.mod_closed")
+		}
+		return err
 	case actEdit:
 		if !p.Active() {
 			return b.update(i, b.managePanel(p, l))
 		}
 		return b.showModal(i, b.editModal(p, b.timeZone(userID, i.Locale), l))
 	case actPanel:
-		return b.update(i, b.managePanel(p, l))
+		return b.update(i, b.panelFor(i, p))
 	case actReopen:
 		return b.onReopen(i, p)
 	case actMove, actMoveTo, actMoveMode:
@@ -85,7 +112,7 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 		dungeonID, modeID, _ := strings.Cut(pick, ":")
 		return b.onMove(i, p, dungeonID, modeID)
 	case actDelete:
-		return b.update(i, b.confirmDelete(p, l))
+		return b.update(i, b.confirmDelete(p, acc != accessLeader, l))
 	case actDeleteYes:
 		// Answer within Discord's 3 second limit, then fill in the result.
 		if err := b.update(i, notice(colorClosed, l.T("delete.deleting"))); err != nil {
@@ -96,9 +123,76 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 		if failed > 0 {
 			msg += l.T("delete.failed", l.N(failed, "n.message"))
 		}
+		if acc != accessLeader {
+			b.tellLeader(p, i.GuildID, "dm.mod_deleted")
+		}
 		return b.editReply(i, notice(colorClosed, msg))
 	}
 	return nil
+}
+
+// onLookingFor changes whom the post is looking for, from the manage
+// panel. Players already on it stay; the threads hear about it.
+func (b *Bot) onLookingFor(i *discordgo.Interaction, before lfg.Post, values []string) error {
+	ids := b.normalizeLookingFor(values, before.LookingFor)
+	p, err := b.leaderChange(i, before.ID, func(p *lfg.Post) error { return p.SetLookingFor(ids) })
+	if p.ID != "" && !slices.Equal(before.LookingFor, p.LookingFor) {
+		b.announceChanges(before, p)
+	}
+	return err
+}
+
+// onHandOver makes a party member the leader, as the leader or the
+// moderators asked. The new leader is pinged in the thread, on their own
+// server; reserves who move up into a slot the old leader freed are
+// welcomed as usual.
+func (b *Bot) onHandOver(i *discordgo.Interaction, before lfg.Post, userID string, stay bool) error {
+	l := lang(i)
+	actor, _ := interactionUser(i)
+	byLeader := actor == before.LeaderID
+	var promoted []lfg.Player
+	p, err := b.store.HandOverPost(before.ID, userID, b.game.MaxRunsPerLeader, func(p *lfg.Post) error {
+		r, err := p.HandOver(userID, stay)
+		if err != nil {
+			return err
+		}
+		promoted = firstPings(p, r)
+		return nil
+	})
+	switch {
+	case errors.Is(err, lfg.ErrTooManyPosts):
+		name := userID
+		if pl, ok := personOn(before, userID); ok {
+			name = pl.Name
+		}
+		return b.update(i, notice(colorClosed, l.T("hand.too_many", escape(name), b.game.MaxRunsPerLeader)))
+	case errors.Is(err, lfg.ErrNotFound):
+		return b.update(i, notice(colorClosed, errorText(err, l)))
+	case err != nil:
+		// The post ended or the player left meanwhile; show it as it is.
+		return b.update(i, b.panelFor(i, p))
+	}
+	b.scheduleSync(p.ID)
+	err = b.update(i, notice(colorOpen, l.T("hand.done", b.game.LeaderEmoji, escape(p.LeaderName), b.runName(p))))
+
+	go b.renameThreads(p)
+	b.learnMembers(p, p.GuildIDs())
+	byGuild := ""
+	if !byLeader {
+		byGuild = i.GuildID
+	}
+	note := func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+		return b.handOverNote(before, p, stay, byGuild, guildID, l)
+	}
+	if !b.announce(p, map[string][]string{p.GuildID: {p.LeaderID}}, true, note)[p.GuildID] {
+		ll := b.guildLang(p.GuildID)
+		b.dm(p.LeaderID, container(colorOpen, text(ll.T("dm.new_leader", b.game.LeaderEmoji, b.runName(p))), manageRow(p.ID, ll)))
+	}
+	if !byLeader {
+		b.tellLeader(before, i.GuildID, "dm.mod_handed")
+	}
+	b.welcome(p, promoted, true)
+	return err
 }
 
 // onJoin opens the join form after checking the player can join at all.
@@ -117,8 +211,17 @@ func (b *Bot) onJoin(i *discordgo.Interaction, p lfg.Post, userID string) error 
 	if err != nil {
 		return b.reply(i, notice(colorClosed, errorText(err, lang(i))))
 	}
+	if b.blockedFrom(p, userID, i.GuildID) {
+		return b.reply(i, notice(colorClosed, lang(i).T("blocked.join")))
+	}
 	prof, _ := b.store.Profile(userID)
 	return b.showModal(i, b.joinModal(p, prof, lang(i)))
+}
+
+// blockedFrom reports whether a player may not join a post: they are
+// blocked on the server they join from, or on the post's own server.
+func (b *Bot) blockedFrom(p lfg.Post, userID, guildID string) bool {
+	return b.store.Blocked(userID, guildID) || b.store.Blocked(userID, p.GuildID)
 }
 
 // onJoinSubmit adds the player once they sent their role, class, gear
@@ -131,14 +234,31 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	classID, roleID, _ := strings.Cut(first(values["choice"]), "|")
 	gs, gsErr := parseGS(first(values["gs"]))
 
+	// The form asks for the faction and game server only when the profile
+	// doesn't fit; otherwise the profile's count.
+	prof, _ := b.store.Profile(userID)
+	faction, server := prof.Faction, prof.Server
+	if v, ok := values["faction"]; ok {
+		faction = b.knownFaction(first(v))
+	}
+	if v, ok := values["server"]; ok {
+		server = cleanChar(first(v))
+	}
+
 	p, ok := b.store.Post(postID)
 	switch {
 	case !ok:
 		return b.reply(i, notice(colorClosed, errorText(lfg.ErrNotFound, l)))
+	case b.blockedFrom(p, userID, i.GuildID):
+		return b.reply(i, notice(colorClosed, l.T("blocked.join")))
 	case !b.game.Fits(p.LookingFor, classID, roleID):
 		return b.reply(i, notice(colorClosed, l.T("join.class_gone")))
 	case gsErr != nil:
 		return b.reply(i, notice(colorClosed, l.T("join.bad_gs")))
+	case p.Faction != "" && faction != "" && faction != p.Faction:
+		return b.reply(i, notice(colorClosed, l.T("join.wrong_faction", b.factionTag(p.Faction), b.factionTag(faction))))
+	case !sideFits(p, faction, server):
+		return b.reply(i, notice(colorClosed, l.T("join.wrong_server", escape(p.Server), escape(server))))
 	}
 
 	pl := lfg.Player{UserID: userID, Name: name, ClassID: classID, RoleID: roleID, GS: gs,
@@ -158,7 +278,7 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 		return b.reply(i, notice(colorClosed, errorText(err, l)))
 	}
 	b.scheduleSync(p.ID)
-	b.rememberJoin(pl)
+	b.rememberJoin(pl, faction, server)
 
 	// A rally takes the player straight in, so they hear whom to look for
 	// in game right away.
@@ -200,8 +320,22 @@ func (b *Bot) onLeave(i *discordgo.Interaction, p lfg.Post, userID string) error
 	}
 	// Leaving only updates the card; the leader was already pinged once. A
 	// reserve who takes the slot is welcomed like an accepted player.
+	p, promoted, err := b.dropPlayer(p.ID, userID)
+	if err != nil {
+		return b.reply(i, notice(colorClosed, errorText(err, l)))
+	}
+	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
+	err = b.reply(i, notice(colorClosed, l.T("leave.done", dungeon.Name)))
+	b.welcome(p, promoted, true)
+	return err
+}
+
+// dropPlayer takes a player off an open post. It returns the reserves who
+// moved up into the slot and weren't welcomed before; the caller welcomes
+// them once it has answered the interaction.
+func (b *Bot) dropPlayer(postID, userID string) (lfg.Post, []lfg.Player, error) {
 	var promoted []lfg.Player
-	p, err := b.store.UpdatePost(p.ID, func(p *lfg.Post) error {
+	p, err := b.store.UpdatePost(postID, func(p *lfg.Post) error {
 		if !p.Active() {
 			return lfg.ErrNotOpen
 		}
@@ -212,15 +346,10 @@ func (b *Bot) onLeave(i *discordgo.Interaction, p lfg.Post, userID string) error
 		promoted = firstPings(p, r)
 		return nil
 	})
-	if err != nil {
-		return b.reply(i, notice(colorClosed, errorText(err, l)))
+	if err == nil {
+		b.scheduleSync(p.ID)
 	}
-	b.scheduleSync(p.ID)
-
-	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
-	err = b.reply(i, notice(colorClosed, l.T("leave.done", dungeon.Name)))
-	b.welcome(p, promoted, true)
-	return err
+	return p, promoted, err
 }
 
 // firstPings marks the reserves that moved up into the party as pinged
@@ -339,7 +468,13 @@ func (b *Bot) onEditSubmit(i *discordgo.Interaction, postID string) error {
 	}
 	note := strings.TrimSpace(first(values["note"]))
 
+	server, askedServer := values["server"]
 	p, err := b.store.UpdatePost(postID, func(p *lfg.Post) error {
+		if askedServer && p.Rally {
+			if err := p.SetServer(cleanChar(first(server))); err != nil {
+				return err
+			}
+		}
 		return p.SetDetails(gs, startAt, note, b.game.PostTTL(), now)
 	})
 	if err != nil {
@@ -354,7 +489,8 @@ func (b *Bot) onEditSubmit(i *discordgo.Interaction, postID string) error {
 // announceChanges tells the existing threads what the leader changed,
 // without pinging anyone.
 func (b *Bot) announceChanges(before, after lfg.Post) {
-	if before.StartAt.Equal(after.StartAt) && before.MinGS == after.MinGS && before.Note == after.Note {
+	if before.StartAt.Equal(after.StartAt) && before.MinGS == after.MinGS && before.Note == after.Note &&
+		slices.Equal(before.LookingFor, after.LookingFor) && before.Server == after.Server {
 		return
 	}
 	b.learnMembers(after, after.GuildIDs())
@@ -477,9 +613,9 @@ func (b *Bot) leaderUpdate(i *discordgo.Interaction, postID string, fn func(p *l
 	return err
 }
 
-// leaderChange applies a change from the manage panel and redraws it. If the
-// change is rejected (for example the post ended meanwhile), the panel still
-// redraws so it shows the current state.
+// leaderChange applies a change from the manage panel, or a moderator's,
+// and redraws it. If the change is rejected (for example the post ended
+// meanwhile), the panel still redraws so it shows the current state.
 func (b *Bot) leaderChange(i *discordgo.Interaction, postID string, fn func(p *lfg.Post) error) (lfg.Post, error) {
 	p, err := b.store.UpdatePost(postID, fn)
 	switch {
@@ -488,7 +624,7 @@ func (b *Bot) leaderChange(i *discordgo.Interaction, postID string, fn func(p *l
 	case err == nil:
 		b.scheduleSync(postID)
 	}
-	return p, b.update(i, b.managePanel(p, lang(i)))
+	return p, b.update(i, b.panelFor(i, p))
 }
 
 // /lfg-setup picks this server's LFG channel, ping role and language, and
@@ -560,12 +696,14 @@ func (b *Bot) setupLang(i *discordgo.Interaction, picked string) i18n.Lang {
 	return lang(i)
 }
 
-// visiblePosts are the open posts made on this server or a linked one.
+// visiblePosts are the open posts made on this server or a linked one,
+// except those its moderators took off it and those of players they
+// blocked.
 func (b *Bot) visiblePosts(guildID string) []lfg.Post {
 	linked := b.store.Linked(guildID)
 	var out []lfg.Post
 	for _, p := range b.store.ActivePosts() {
-		if slices.Contains(linked, p.GuildID) {
+		if slices.Contains(linked, p.GuildID) && b.welcomeIn(p, guildID) {
 			out = append(out, p)
 		}
 	}

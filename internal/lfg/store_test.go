@@ -2,7 +2,6 @@ package lfg
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -382,7 +381,8 @@ func TestProfiles(t *testing.T) {
 	if _, ok := s.Profile("u1"); ok {
 		t.Fatal("profile before saving")
 	}
-	want := Profile{UserID: "u1", ClassID: "gladiator", RoleID: "tank", GS: 2900, TimeZone: "Europe/Prague", Char: "Lea", SkipReminders: true}
+	want := Profile{UserID: "u1", ClassID: "gladiator", RoleID: "tank", GS: 2900, TimeZone: "Europe/Prague", Char: "Lea", SkipReminders: true,
+		Faction: "elyos", Server: "Siel"}
 	if err := s.SetProfile(want); err != nil {
 		t.Fatal(err)
 	}
@@ -403,8 +403,12 @@ func TestOlderPostsTakeTheLeaderFromTheProfile(t *testing.T) {
 	if picked, err = s.CreatePost(picked, 9); err != nil {
 		t.Fatal(err)
 	}
-	// Go back to before the profile backfill.
-	if _, err := s.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-1)); err != nil {
+	// Run the profile backfill again, as an upgrade from before it would.
+	backfill := slices.IndexFunc(migrations, func(m string) bool { return strings.Contains(m, "SET (leader_class") })
+	if backfill < 0 {
+		t.Fatal("no profile backfill among the migrations")
+	}
+	if _, err := s.db.Exec(migrations[backfill]); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -561,5 +565,139 @@ func TestRalliesRoundTrip(t *testing.T) {
 	}
 	if len(runs) != 2 || unlimitedRuns != 1 {
 		t.Fatalf("runs %+v", runs)
+	}
+}
+
+func TestHandOverPostAndPostsOf(t *testing.T) {
+	s, _ := openTestStore(t)
+	now := time.Now()
+	create := func(leader string, players ...string) Post {
+		p, err := s.CreatePost(Post{LeaderID: leader, GuildID: "g1", DungeonID: "krao-cave", Missing: 4, Status: StatusOpen,
+			LookingFor: []string{"any"}, CreatedAt: now, ExpiresAt: now.Add(time.Hour), Faction: "elyos", Server: "Siel"}, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(players) > 0 {
+			p, err = s.UpdatePost(p.ID, func(p *Post) error {
+				for _, id := range players {
+					p.AddApplicant(Player{UserID: id, GuildID: "g2"})
+				}
+				_, err := p.Accept(players)
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		return p
+	}
+	p := create("L", "a", "b")
+	if got, _ := s.Post(p.ID); got.Faction != "elyos" || got.Server != "Siel" {
+		t.Fatalf("stored faction and server: %q %q", got.Faction, got.Server)
+	}
+	create("a")
+	ended := create("a")
+	s.UpdatePost(ended.ID, func(p *Post) error { return p.Close(StatusClosed, now) })
+
+	// "a" leads one open run already; with room for one, they can't take
+	// over another.
+	_, err := s.HandOverPost(p.ID, "a", 1, func(p *Post) error {
+		_, err := p.HandOver("a", true)
+		return err
+	})
+	if !errors.Is(err, ErrTooManyPosts) {
+		t.Fatalf("hand over to a busy leader: %v", err)
+	}
+	got, err := s.HandOverPost(p.ID, "a", 2, func(p *Post) error {
+		_, err := p.HandOver("a", false)
+		return err
+	})
+	if err != nil || got.LeaderID != "a" || got.GuildID != "g2" || got.Has("L") {
+		t.Fatalf("handed over: %v, %+v", err, got)
+	}
+	if stored, _ := s.Post(p.ID); stored.LeaderID != "a" || stored.Revision != got.Revision {
+		t.Fatalf("stored after handing over: %+v", stored)
+	}
+
+	ids := func(posts []Post) []string {
+		var out []string
+		for _, p := range posts {
+			out = append(out, p.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	want := []string{p.ID, ended.ID}
+	for _, q := range s.ActivePostsByLeader("a") {
+		want = append(want, q.ID)
+	}
+	slices.Sort(want)
+	if got := ids(s.PostsOf("a")); !slices.Equal(got, slices.Compact(want)) {
+		t.Fatalf("posts of a: %v, want %v", got, want)
+	}
+	if got := ids(s.PostsOf("b")); !slices.Equal(got, []string{p.ID}) {
+		t.Fatalf("posts of b: %v", got)
+	}
+	if got := s.PostsOf("L"); len(got) != 0 {
+		t.Fatalf("the old leader left, but still has %v", ids(got))
+	}
+
+	// Hiding a post on a server forgets its messages there and is stored.
+	s.AddMessages(p.ID, []MessageRef{{GuildID: "g1", ChannelID: "c1", MessageID: "m1"}, {GuildID: "g2", ChannelID: "c2", MessageID: "m2"}})
+	s.AddReply(p.ID, MessageRef{GuildID: "g2", ChannelID: "m2", MessageID: "r2"})
+	s.UpdatePost(p.ID, func(p *Post) error {
+		p.Hide("g2")
+		return nil
+	})
+	s.RemoveMessagesIn(p.ID, "g2")
+	if got, _ := s.Post(p.ID); !got.HiddenIn("g2") || got.InGuild("g2") || !got.InGuild("g1") || len(s.AllMessages(p.ID)) != 1 {
+		t.Fatalf("after hiding on g2: hidden %v, messages %v", got.Hidden, s.AllMessages(p.ID))
+	}
+}
+
+func TestBlocks(t *testing.T) {
+	s, _ := openTestStore(t)
+	n, err := s.CreateNetwork("Alliance", "a", "Server a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.JoinNetwork(n.Code, "b", "Server b")
+
+	if s.Blocked("u", "a") {
+		t.Fatal("blocked before any block")
+	}
+	if err := s.Block(Block{Scope: "a", UserID: "u", Name: "Troll", By: "mod"}); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Blocked("u", "a") || s.Blocked("u", "b") || s.Blocked("v", "a") || s.Blocked("u", "") {
+		t.Fatal("a server block covers that server only")
+	}
+	if err := s.Block(Block{Scope: NetworkScope(n.ID), UserID: "v", Name: "Spammer", By: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Blocked("v", "a") || !s.Blocked("v", "b") || s.Blocked("v", "c") {
+		t.Fatal("a network block covers the network's servers only")
+	}
+	// Blocking again updates the block, without a second one.
+	s.Block(Block{Scope: "a", UserID: "u", Name: "Troll2", By: "mod2"})
+	blocks := s.Blocks("a", NetworkScope(n.ID))
+	if len(blocks) != 2 {
+		t.Fatalf("blocks %+v", blocks)
+	}
+	for _, b := range blocks {
+		if b.UserID == "u" && (b.Name != "Troll2" || b.Network()) || b.UserID == "v" && !b.Network() || b.At.IsZero() {
+			t.Fatalf("block %+v", b)
+		}
+	}
+	if len(s.Blocks()) != 0 || len(s.Blocks("b")) != 0 {
+		t.Fatal("blocks of no or another scope")
+	}
+	if !s.Unblock("a", "u") || s.Unblock("a", "u") || s.Blocked("u", "a") {
+		t.Fatal("unblock")
+	}
+	// Leaving the network ends its blocks for the server that left.
+	s.LeaveNetwork("b")
+	if s.Blocked("v", "b") || !s.Blocked("v", "a") {
+		t.Fatal("a network block outlived the server's membership")
 	}
 }

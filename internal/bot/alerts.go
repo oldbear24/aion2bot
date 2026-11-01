@@ -134,16 +134,16 @@ func (b *Bot) sendAlerts(postID string) {
 }
 
 // alertMatches reports whether a post is one the alert asks for: one of
-// its dungeons, looking for one of its choices, and with a minimum gear
-// score the player's profile meets, when they saved one.
+// its dungeons, looking for one of its choices, with a minimum gear score
+// the player's profile meets, and for their faction and game server, as
+// far as they saved them.
 func (b *Bot) alertMatches(a lfg.Alert, p lfg.Post) bool {
 	if !slices.Contains(a.Dungeons, p.DungeonID) {
 		return false
 	}
-	if p.MinGS > 0 {
-		if prof, ok := b.store.Profile(a.UserID); ok && prof.GS > 0 && prof.GS < p.MinGS {
-			return false
-		}
+	prof, _ := b.store.Profile(a.UserID)
+	if p.MinGS > 0 && prof.GS > 0 && prof.GS < p.MinGS || !sideFits(p, prof.Faction, prof.Server) {
+		return false
 	}
 	return slices.ContainsFunc(a.Choices, func(c string) bool {
 		classID, roleID, _ := strings.Cut(c, "|")
@@ -156,7 +156,7 @@ func (b *Bot) alertMatches(a lfg.Alert, p lfg.Post) bool {
 func (b *Bot) alertDM(p lfg.Post, ref lfg.MessageRef, l i18n.Lang) discordgo.MessageComponent {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	s := l.T("alert.dm_title", strings.TrimSpace(dungeon.Emoji+" "+dungeon.Name))
-	if line := difficultyLine(dungeon, p.ModeID, p.MinGS, l); line != "" {
+	if line := withSide(difficultyLine(dungeon, p.ModeID, p.MinGS, l), b.sideLine(p, l)); line != "" {
 		s += "\n" + line
 	}
 	s += "\n" + b.statusLine(p, l)

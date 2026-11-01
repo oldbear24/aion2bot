@@ -214,7 +214,8 @@ func (b *Bot) relay(p lfg.Post, m *discordgo.Message) {
 	var copies []lfg.Relay
 	var started []lfg.MessageRef
 	forEach(p.Messages, func(ref lfg.MessageRef) {
-		if ref.GuildID == m.GuildID {
+		// Nothing from a player blocked there, or in the whole network.
+		if ref.GuildID == m.GuildID || b.store.Blocked(m.Author.ID, ref.GuildID) {
 			return
 		}
 		threadID, fresh, err := b.thread(p, ref)

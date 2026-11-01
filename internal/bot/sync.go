@@ -75,12 +75,13 @@ func (b *Bot) syncPost(postID string) {
 
 // broadcast sends a post to every given server that doesn't have it yet and
 // returns how many copies were delivered and how many failed. ping is set
-// for brand-new posts; copies sent later by /lfg-setup stay quiet.
+// for brand-new posts; copies sent later by /lfg-setup stay quiet. Servers
+// whose moderators took the post off, or blocked its leader, are skipped.
 func (b *Bot) broadcast(p lfg.Post, guilds []lfg.GuildConfig, ping bool) (sent, failed int) {
 	var fresh []lfg.GuildConfig
 	var guildIDs []string
 	for _, g := range guilds {
-		if !p.InGuild(g.GuildID) {
+		if !p.InGuild(g.GuildID) && b.welcomeIn(p, g.GuildID) {
 			fresh = append(fresh, g)
 			guildIDs = append(guildIDs, g.GuildID)
 		}

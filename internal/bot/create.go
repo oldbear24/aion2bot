@@ -36,8 +36,12 @@ type draft struct {
 	// they pick something else.
 	Class string
 	Role  string
-	MinGS int
-	Note  string
+	// Faction is the side the post is for, and Server the game server a
+	// rally gathers on; both start from the profile.
+	Faction string
+	Server  string
+	MinGS   int
+	Note    string
 	// StartAt is when the run starts, zero for "as soon as the party is
 	// full". StartInput is what the leader typed, to show it again.
 	StartAt    time.Time
@@ -162,6 +166,9 @@ func (b *Bot) gameMinGS(d draft) int {
 func (b *Bot) cmdLFG(i *discordgo.Interaction, abyss bool) error {
 	userID, _ := interactionUser(i)
 	l := lang(i)
+	if b.store.Blocked(userID, i.GuildID) {
+		return b.reply(i, notice(colorClosed, l.T("blocked.post")))
+	}
 	if open := b.store.ActivePostsByLeader(userID); len(open) >= b.game.MaxRunsPerLeader {
 		return b.reply(i, b.tooManyRuns(open, l))
 	}
@@ -169,7 +176,8 @@ func (b *Bot) cmdLFG(i *discordgo.Interaction, abyss bool) error {
 		return b.reply(i, notice(colorClosed, l.T("draft.nowhere")))
 	}
 	prof, _ := b.store.Profile(userID)
-	d := draft{Abyss: abyss, Missing: 1, Class: prof.ClassID, Role: prof.RoleID, Zone: b.timeZone(userID, i.Locale)}
+	d := draft{Abyss: abyss, Missing: 1, Class: prof.ClassID, Role: prof.RoleID, Faction: b.knownFaction(prof.Faction),
+		Server: prof.Server, Zone: b.timeZone(userID, i.Locale)}
 	if abyss {
 		d.LookingFor = []string{config.AnyID}
 	}
@@ -205,6 +213,10 @@ func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string, a
 		if classID, roleID, _ := strings.Cut(first(values), "|"); b.game.Fits([]string{config.AnyID}, classID, roleID) {
 			d.Class, d.Role = classID, roleID
 		}
+	case fieldFaction:
+		if faction := b.knownFaction(first(values)); faction != "" {
+			d.Faction = faction
+		}
 	case fieldDetails:
 		return b.showModal(i, b.detailsModal(d, l))
 	case fieldPost:
@@ -229,6 +241,9 @@ func (b *Bot) onDraftDetails(i *discordgo.Interaction, abyss bool) error {
 	values := modalValues(i.ModalSubmitData().Components)
 	d.Problem = ""
 	d.Note = strings.TrimSpace(first(values["note"]))
+	if d.Abyss {
+		d.Server = cleanChar(first(values["server"]))
+	}
 
 	if gs, err := parseGS(first(values["gs"])); err != nil {
 		d.Problem = "draft.bad_gs"
@@ -259,6 +274,11 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 		d.Problem = textFor("draft.need_dungeon", d.Abyss)
 	case len(d.LookingFor) == 0:
 		d.Problem = "draft.need_looking"
+	case b.needsFaction(d.Faction):
+		d.Problem = "draft.need_faction"
+	case b.store.Blocked(userID, i.GuildID):
+		b.dropDraft(userID, d.Abyss)
+		return b.update(i, notice(colorClosed, l.T("blocked.post")))
 	case !d.StartAt.IsZero() && !d.StartAt.After(now):
 		// The panel may have stayed open past the start time.
 		d.Problem = "draft.start_past"
@@ -273,10 +293,13 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 	if d.StartAt.After(now) {
 		expires = d.StartAt.Add(b.game.PostTTL())
 	}
-	// A rally counts its players against its size instead.
-	missing := d.Missing
+	// A rally counts its players against its size instead, and only a
+	// rally is held on one game server.
+	missing, server := d.Missing, d.Server
 	if d.Abyss {
 		missing = 0
+	} else {
+		server = ""
 	}
 	prof, _ := b.store.Profile(userID)
 	p, err := b.store.CreatePost(lfg.Post{
@@ -295,6 +318,8 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 		Missing:     missing,
 		Rally:       d.Abyss,
 		Size:        d.Size,
+		Faction:     b.knownFaction(d.Faction),
+		Server:      server,
 		StartAt:     d.StartAt,
 		Note:        d.Note,
 		Status:      lfg.StatusOpen,
@@ -309,6 +334,7 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 		return b.update(i, notice(colorClosed, errorText(err, l)))
 	}
 	b.dropDraft(userID, d.Abyss)
+	b.rememberSide(userID, p.Faction, p.Server)
 
 	// Answer within Discord's 3 second limit, then fill in the result.
 	guilds := b.store.Targets(i.GuildID)

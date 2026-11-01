@@ -40,7 +40,8 @@ func (b *Bot) helpPanel(l i18n.Lang, admin bool) discordgo.MessageComponent {
 	}
 	parts := []discordgo.MessageComponent{
 		text(l.T("help.title")),
-		text(l.T("help.find", b.cmd("lfg-find"), b.cmd("lfg-notify"), l.N(b.game.ReminderMinutes, "n.minutes"), b.cmd("profile"))),
+		text(l.T("help.find", b.cmd("lfg-find"), b.cmd("lfg-notify"), l.N(b.game.ReminderMinutes, "n.minutes"), b.cmd("lfg-mine"),
+			b.cmd("profile"))),
 		divider(),
 		text(l.T("help.post", b.cmd("lfg"), strings.Join(roles, " · "),
 			b.game.MaxRunsPerLeader, l.N(b.game.PostTTLHours, "n.hours"), b.cmd("lfg-stats"))),
@@ -55,7 +56,8 @@ func (b *Bot) helpPanel(l i18n.Lang, admin bool) discordgo.MessageComponent {
 	if admin {
 		parts = append(parts, divider(),
 			text(l.T("help.admin", b.cmd("lfg-setup"), b.cmd("lfg-check"), b.cmd("lfg-network create"),
-				b.cmd("lfg-network join"), b.cmd("lfg-network info"), b.cmd("lfg-disable"), b.cmd("help-public"))))
+				b.cmd("lfg-network join"), b.cmd("lfg-network info"), b.cmd("lfg-disable"), b.cmd("help-public"),
+				b.cmd("lfg-blocks"))))
 	}
 	parts = append(parts, text(l.T("help.footer", b.cmd("help"), b.cmd("legend"))))
 	return container(colorFull, parts...)
@@ -109,11 +111,17 @@ func (b *Bot) legendPanel(l i18n.Lang) discordgo.MessageComponent {
 		}
 	}
 
-	return container(colorFull,
+	comps := []discordgo.MessageComponent{
 		text(l.T("legend.title")),
-		text(l.T("legend.roles")+strings.Join(roles, " · ")),
-		text(l.T("legend.classes")+classes.String()),
-		divider(),
-		text(l.T("legend.post", b.game.LeaderEmoji)),
-	)
+		text(l.T("legend.roles") + strings.Join(roles, " · ")),
+		text(l.T("legend.classes") + classes.String()),
+	}
+	if len(b.game.Factions) > 0 {
+		factions := make([]string, 0, len(b.game.Factions))
+		for _, f := range b.game.Factions {
+			factions = append(factions, b.factionTag(f.ID))
+		}
+		comps = append(comps, text(l.T("legend.factions")+strings.Join(factions, " · ")))
+	}
+	return container(colorFull, append(comps, divider(), text(l.T("legend.post", b.game.LeaderEmoji)))...)
 }

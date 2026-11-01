@@ -22,6 +22,8 @@ It uses Discord's new components:
    - **Missing players**: limited by the mode's party size.
    - **You play**: the leader's role and class, filled in from `/profile`. The leader is listed in the party on the post,
      with their profile's character name and GS. The party is sorted by role: tanks, then DPS, then healers (the order of `roles` in `game.json`).
+   - **Faction**: Elyos or Asmodian, filled in from `/profile`. Each AION 2 server holds one faction and dungeons match players
+     across the servers of a faction, so only players of the post's faction can join it. The card shows it next to the difficulty.
    - **Gear score, time & note** (all optional). The game's GS requirement for the mode is shown as a hint.
      The start is typed like `21.09.2026 10:15`, `21.9. 10:15` or just `10:15` (the next 10:15), in the leader's time zone.
      On the post it becomes a Discord timestamp, so every player sees it in their own local time with a countdown.
@@ -30,7 +32,9 @@ It uses Discord's new components:
    A player can have up to `max_runs_per_leader` open runs at once.
    **Abyss events and invasions.** `/lfg-abyss` opens the same panel for a **rally**: the Abyss event (Artifact Siege, Abyss Boss, Dimensional Invasion,
    Rift Invasion, Abyss Farm) and its zone, who you need (*Any class* until you pick otherwise), the **group size** counting you
-   (5 to 100 players, or *No limit*), what you play, and the gear score, time & note. Without a start time, the rally gathers right away.
+   (5 to 100 players, or *No limit*), what you play, your faction, and the gear score, time & note. Without a start time, the rally gathers right away.
+   - The same form takes the rally's **game server** (from `/profile`, optional). The Abyss pairs each server with one of the other faction,
+     so a rally with a server only takes players from it. Names are compared ignoring case and spaces, as players type them.
    - Players **join straight in**, with no one to accept them: the card counts who's going (`👥 12 going (12/20)`) and lists them by role.
      The leader is pinged once, for the first player, like on any run.
    - Once a rally with a size is full, new players join as reserves and move up in the order they came, whatever their role,
@@ -39,19 +43,29 @@ It uses Discord's new components:
      or the event (🗺️, among the Abyss events only), and closes, deletes or reopens the post.
    - The reminder before a planned start mentions everyone in the rally by name, 50 to a message, as the roster on a big rally can't list them all.
    - Rallies count towards `max_runs_per_leader`, show up in `/lfg-find`, `/lfg-notify` and `/lfg-stats`, and get a thread like any run.
-4. **Find.** Players watch the LFG channel, or run `/lfg-find`: it lists the open runs on the linked servers that their class and gear score
-   from `/profile` fit, soonest start first, with a menu to join one. `/lfg-notify` sends them a DM with a link when a new post fits:
-   they pick the dungeons and what they play (one or more role and class pairs), and runs their profile GS is too low for are skipped.
+4. **Find.** Players watch the LFG channel, or run `/lfg-find`: it lists the open runs on the linked servers that their class, gear score,
+   faction and game server from `/profile` fit, soonest start first, with a menu to join one. `/lfg-notify` sends them a DM with a link when a new post fits:
+   they pick the dungeons and what they play (one or more role and class pairs), and runs their profile's GS, faction or server don't fit are skipped.
    Alerts count posts that reach the server they were set up on.
+   `/lfg-mine` lists a player's own runs: those they lead (with **Manage**), those they're on, waiting for the leader or a reserve on (with **Leave**),
+   and those they led that ended in the last 24 hours, which they can still reopen.
 5. **Join.** Players click **Join**, pick their role and class (only combinations the post asks for) and enter their gear score and in-game character name.
-   `/profile` saves a main role, class, character name and GS so the form is filled in; the GS and name also update every time they join.
-   It also sets the player's time zone for typed start times. Until they pick one, it's guessed from their Discord language (Czech → Prague time).
+   The form also asks for their faction, and for a rally's game server, when their profile doesn't already fit: on an alt, or before they saved them.
+   A player of another faction, or from another server for a rally, can't join.
+   `/profile` is a private panel: menus for the main role and class, the faction, the time zone and reminders, saved as soon as they're picked,
+   and a form for the character name, game server and GS. It fills in the join form; the GS, character, faction and server also follow every join.
+   The time zone is for typed start times. Until the player picks one, it's guessed from their Discord language (Czech → Prague time).
    The character name shows on the post and in Manage, so the leader knows whom to invite; accepted players see the leader's.
    - **Reserves.** Once the party is full, **Join as reserve** puts players on a reserve list. When a party member leaves or is removed,
      the first reserve with the same role takes the slot and is pinged; without one, the slot opens again and the leader can accept any reserve.
 6. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players and reserves, change the gear score, start time and note (✏️),
    adjust the missing count when someone joins outside the bot, **Close** the post, or **Delete** it from every server right away.
    A changed start moves the expiry with it, and the threads get a note of what changed.
+   - **Looking for** changes the roles and classes the post asks for, without reposting. Players already on it stay; the threads get a note.
+   - **Hand over** makes an accepted party member the leader: the old leader stays in the party in their place, or leaves it,
+     freeing the slot for a reserve as when anyone leaves. The new leader gets **Manage**, is pinged in the thread, and the thread names follow.
+     The post now belongs to the server the new leader joined from. They need room under `max_runs_per_leader`.
+     The leader's **Leave** button points them here.
    - **Change dungeon** (🗺️) takes the post to another dungeon or difficulty with everyone on it: the party, the players waiting and the reserves.
      The players found outside the bot stay too, so the party fills as many slots as before; a party that doesn't fit the new size can't move there.
      The cards and the thread names follow, and the threads get a note.
@@ -69,9 +83,19 @@ It uses Discord's new components:
    - The leader and the players are linked with @mentions on every server they're a member of; elsewhere they show by name, since Discord can't resolve the mention there.
 
    The channel itself only holds the posts. If a server has no copy of the post, or the bot can't use threads there, pings go by DM instead.
-8. **Cleanup.** Posts expire after `post_ttl_hours`. A closed or expired post is deleted from every server, with the thread under it, 24 hours after it ended.
+8. **Moderation.** Posts travel to every linked server, so each server's moderators (*Manage Messages*) keep their own channel in order.
+   **Manage** on someone else's post opens a moderation panel instead of the leader's:
+   - On any server, **Remove from this server** deletes the post's copy and its thread there for good; it stays up elsewhere.
+   - **Block on this server**: the player's runs no longer arrive there (open ones are removed), they can't post runs from there,
+     can't join runs from there or runs posted there, and what they write in threads isn't relayed there.
+   - Moderators of the server a post was made on, and of the network's owner server, are in charge of it: they can also **Close** or **Delete** it,
+     and **hand it over** to a party member when its leader is gone. The leader gets a DM.
+   - Moderators of the owner server can **block in the whole network**: the player's open runs in it are deleted, they're taken off the runs they joined there,
+     and the block applies on every linked server.
+   - `/lfg-blocks` lists the server's blocks (and the network's, on the owner server) and lifts them.
+9. **Cleanup.** Posts expire after `post_ttl_hours`. A closed or expired post is deleted from every server, with the thread under it, 24 hours after it ended.
    The bot can delete threads it started; if Discord ever refuses, it deletes its pings and archives the thread instead.
-9. **Stats.** `/lfg-stats` shows the last 24 hours, 7 or 30 days of the server and its network: runs posted and open, how many filled and how fast,
+10. **Stats.** `/lfg-stats` shows the last 24 hours, 7 or 30 days of the server and its network: runs posted and open, how many filled and how fast,
    the players on them, the most popular dungeons and the busiest servers. Ended runs are kept for this for 90 days.
    Rallies without a size never fill, so they don't count towards how many runs did.
 
@@ -132,8 +156,9 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | `/lfg-abyss` | everyone | Opens the panel to gather players for an Abyss event or invasion: an open rally, with or without a size limit |
 | `/lfg-find [dungeon]` | everyone | Lists the open runs (dungeons and Abyss rallies) you can join with your class and gear score, with a menu to join one |
 | `/lfg-notify` | everyone | Sets up a DM for new runs: the dungeons you want and what you play |
+| `/lfg-mine` | everyone | Lists the runs you lead or joined, with **Manage** and **Leave**, and your ended runs you can still reopen, only to you |
 | `/lfg-stats [days]` | everyone | Shows runs posted and filled, the most popular dungeons and the busiest servers of the network |
-| `/profile` | everyone | Saves your main role, class, character name, gear score, time zone and whether you want reminders |
+| `/profile` | everyone | Shows and changes your main role, class, faction, character name, game server, gear score, time zone and whether you want reminders |
 | `/help` | everyone | Shows how to use the bot, only to you (members with Manage Server also see the admin commands) |
 | `/legend` | everyone | Explains the icons on posts: roles, every class and the roles it fills, the leader's crown and the party lists, only to you |
 | `/help-public` | Manage Messages | Posts the player guide (without the admin commands) in the channel for everyone (permission adjustable in Server Settings → Integrations) |
@@ -146,6 +171,7 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | `/lfg-network remove server` | Network owner | Removes a server from the network |
 | `/lfg-network new-code` | Network owner | Replaces the join code |
 | `/lfg-disable` | Manage Server | Stops new posts from arriving on this server |
+| `/lfg-blocks` | Manage Messages | Lists the players blocked on this server (and in the network, on its owner server) and lifts blocks. Players are blocked from **Manage** on one of their posts |
 
 ## Game data (`game.json`)
 
@@ -172,6 +198,10 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
         { "id": "lower-reshanta", "name": "Lower Reshanta" }
       ] }                                       // no party_size: the leader picks the group size
   ],
+  "factions": [               // optional; a post is for one of them, and only its players can join
+    { "id": "elyos", "name": "Elyos", "emoji": "☀️" },
+    { "id": "asmodian", "name": "Asmodian", "emoji": "🌙" }
+  ],
   "roles": [                  // roles leaders can look for; the emoji marks players on the post,
     { "id": "tank", "name": "Tank", "emoji": "🟦" }    // whose party is sorted in this order
   ],
@@ -195,25 +225,29 @@ The Abyss events are Artifact Siege and Abyss Farm, each in Lower or Middle Resh
 and Rift Invasion (going through a rift into the enemy's). Rename them or add others to match the global client.
 Dungeons and Abyss events share their `id`s, as a post names either by its `id` alone, and are at most 25 together: `/lfg-notify` and `/lfg-find` offer them in one menu.
 Without an `abyss` list, `/lfg-abyss` isn't registered.
+With `factions`, every post says which faction it's for, and players of the other faction can't join it or see it in `/lfg-find` and `/lfg-notify`.
+Without them, posts don't say and anyone can join. Game servers aren't listed: there are dozens, so players type theirs,
+and a rally with a server takes players whose server matches, ignoring case and spaces.
 Class roles: Templar tanks, Gladiator tanks or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.
 A Chanter who joins as a healer shows as DPS once a Cleric is accepted into the party, since the Cleric does the healing then; it shows as a healer again if the Cleric leaves.
 A Cleric who has only applied doesn't count. Generally, a class's `backup_roles` show as its first other role while an accepted player of another class fills them.
 Emojis can be Unicode or custom (`"<:krao:123456789012345678>"`). Keep `id`s stable: open posts refer to them.
 
-Roles and classes show as icons: `internal/emoji/images/<id>.png` (128×128) is built into the bot, uploaded as an application emoji at startup
+Roles, classes and factions show as icons: `internal/emoji/images/<id>.png` (128×128) is built into the bot, uploaded as an application emoji at startup
 and used instead of the `emoji` in `game.json`, which stays as the fallback (for an id without an icon, or if the upload fails).
-`leader.png` is the party leader's crown, with 👑 as its fallback.
+`leader.png` is the party leader's crown, with 👑 as its fallback. A test checks that every role, class and faction has an icon.
 A changed image is uploaded again on the next start and the old emoji deleted.
 
-The emojis in the bot's messages (✋ Join, ⚙️ Manage, 🕒 start, ✅ ⏳ 🪑 in the party list, the dungeon types, and the rest) get icons in the same style:
+The emojis in the bot's messages (✋ Join, ⚙️ Manage, 🕒 start, ✅ ⏳ 🪑 in the party list, the dungeon types, ⛔ blocks, and the rest) get icons in the same style:
 `internal/emoji/images/ui/<name>.png`, drawn by `python tools/icons/draw_ui_icons.py` (needs Pillow; `--sheet out.png` writes a preview next to the role and class icons).
+The same script draws the faction icons (`elyos.png`, `asmodian.png`: a sun and a crescent moon, in circles like the classes).
 `internal/bot/icons.go` maps each emoji to its icon. Messages are written with the emojis, and the icons replace them as they're sent,
 in text and on buttons and menu options; placeholders, labels and forms keep the emojis, since Discord can't show custom ones there.
 
 ## Data
 
 Everything is stored in SQLite at `data/aion2bot.db` (change it with `DB_FILE`; `/data/aion2bot.db` in the Docker image). The driver is pure Go, so no C compiler is needed.
-Newer versions upgrade an older database on start. Posts, profiles and alerts are kept; ended runs stay in the stats for 90 days.
+Newer versions upgrade an older database on start. Posts, profiles, alerts and blocks are kept; ended runs stay in the stats for 90 days.
 Every card still shown, open or ended, is redrawn on start, so it picks up a new version's layout and icons.
 On first start, a `data/store.json` from older versions is imported and renamed to `store.json.imported`; servers from it are linked into one network, because older versions shared posts with every server.
 
@@ -225,10 +259,10 @@ game.json           dungeons, modes, roles and classes
 Dockerfile          the release image; compose.yaml runs it
 .github/workflows   CI (tests, image build) and releases
 internal/config     game.json and .env loading, role/class matching
-internal/emoji      role, class, leader and interface icons, uploaded as application emojis
+internal/emoji      role, class, faction, leader and interface icons, uploaded as application emojis
 tools/icons         draws the interface icons
-internal/lfg        post rules, reserves and rallies, SQLite storage, networks, profiles, alerts, run history
-internal/bot        commands, panels, forms, cross-server sync, shared threads, reminders, alerts, search, stats, cleanup
+internal/lfg        post rules, reserves and rallies, SQLite storage, networks, profiles, alerts, blocks, run history
+internal/bot        commands, panels, forms, cross-server sync, shared threads, reminders, alerts, search, your runs, moderation, stats, cleanup
 ```
 
 Run the tests with `go test ./...`.

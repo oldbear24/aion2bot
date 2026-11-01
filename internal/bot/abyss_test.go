@@ -64,9 +64,10 @@ func TestAbyssDraft(t *testing.T) {
 		t.Fatal("the /lfg panel took an Abyss event")
 	}
 
+	d.Faction = "elyos"
 	full := d
 	full.Size, full.Note, full.Problem = 100, strings.Repeat("n", 300), "draft.abyss_need_dungeon"
-	full.StartAt = time.Now().Add(time.Hour)
+	full.StartAt, full.Server = time.Now().Add(time.Hour), strings.Repeat("S", maxChar)
 	for _, l := range i18n.Langs {
 		for name, d := range map[string]draft{"empty": {Abyss: true, LookingFor: []string{config.AnyID}}, "full": full} {
 			panel := b.draftPanel(d, l)

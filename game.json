@@ -82,6 +82,10 @@
         { "id": "middle-reshanta", "name": "Middle Reshanta" }
       ] }
   ],
+  "factions": [
+    { "id": "elyos", "name": "Elyos", "emoji": "☀️" },
+    { "id": "asmodian", "name": "Asmodian", "emoji": "🌙" }
+  ],
   "roles": [
     { "id": "tank", "name": "Tank", "emoji": "🟦" },
     { "id": "dps", "name": "DPS", "emoji": "🟥" },

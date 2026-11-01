@@ -32,6 +32,7 @@ var (
 	ErrStillOpen     = errors.New("post has not ended")
 	ErrPartyTooBig   = errors.New("party doesn't fit the dungeon")
 	ErrNotRally      = errors.New("post is not a rally")
+	ErrNothingWanted = errors.New("post must look for someone")
 )
 
 // GuildConfig is where a server wants LFG posts delivered.
@@ -137,6 +138,16 @@ type Post struct {
 	// Reminded is set once the reminder before the start is due, whether
 	// or not anyone was reminded.
 	Reminded bool `json:"reminded,omitempty"`
+	// Faction is the side the post is for; only its players can join.
+	// Empty means anyone.
+	Faction string `json:"faction,omitempty"`
+	// Server is the game server a rally gathers on, as the leader wrote
+	// it. The Abyss pairs each server with one of the other faction, so a
+	// rally takes players from its own server only. Empty means any.
+	Server string `json:"server,omitempty"`
+	// Hidden lists the Discord servers whose moderators took the post off
+	// their channel; it isn't sent there again.
+	Hidden []string `json:"hidden,omitempty"`
 }
 
 func (p *Post) Active() bool { return p.Status == StatusOpen || p.Status == StatusFull }
@@ -149,8 +160,21 @@ func (p *Post) Clone() Post {
 	c.Reserves = slices.Clone(p.Reserves)
 	c.Messages = slices.Clone(p.Messages)
 	c.Pinged = slices.Clone(p.Pinged)
+	c.Hidden = slices.Clone(p.Hidden)
 	return c
 }
+
+// Hide keeps the post off a Discord server from now on. It reports
+// whether the post was shown there before.
+func (p *Post) Hide(guildID string) bool {
+	if slices.Contains(p.Hidden, guildID) {
+		return false
+	}
+	p.Hidden = append(p.Hidden, guildID)
+	return true
+}
+
+func (p *Post) HiddenIn(guildID string) bool { return slices.Contains(p.Hidden, guildID) }
 
 // MarkPinged records that a user was notified about this post and reports
 // whether this is the first time.
@@ -336,6 +360,58 @@ func (p *Post) SetDetails(minGS int, startAt time.Time, note string, ttl time.Du
 		}
 	}
 	return nil
+}
+
+// SetLookingFor changes the roles and classes an active post asks for.
+// Players already on it stay, whatever they bring.
+func (p *Post) SetLookingFor(ids []string) error {
+	switch {
+	case !p.Active():
+		return ErrNotOpen
+	case len(ids) == 0:
+		return ErrNothingWanted
+	}
+	p.LookingFor = slices.Clone(ids)
+	return nil
+}
+
+// SetServer changes the game server a rally gathers on.
+func (p *Post) SetServer(server string) error {
+	switch {
+	case !p.Active():
+		return ErrNotOpen
+	case !p.Rally:
+		return ErrNotRally
+	}
+	p.Server = server
+	return nil
+}
+
+// HandOver makes a party member the leader. The old leader takes their
+// place in the party when they stay; otherwise they leave it, and their
+// slot goes to a reserve or opens again, as when any player leaves. The
+// post now belongs to the new leader's Discord server, the one they
+// joined from.
+func (p *Post) HandOver(userID string, stay bool) (Removal, error) {
+	if !p.Active() {
+		return Removal{}, ErrNotOpen
+	}
+	i := indexOf(p.Accepted, userID)
+	if i < 0 {
+		return Removal{}, ErrNotInParty
+	}
+	old, next := p.Leader(), p.Accepted[i]
+	p.Accepted[i] = old
+	p.LeaderID, p.LeaderName, p.LeaderChar = next.UserID, next.Name, next.Char
+	p.LeaderClass, p.LeaderRole, p.LeaderGS = next.ClassID, next.RoleID, next.GS
+	if next.GuildID != "" {
+		p.GuildID, p.GuildName = next.GuildID, next.GuildName
+	}
+	if stay {
+		return Removal{}, nil
+	}
+	r, _ := p.Remove(old.UserID)
+	return r, nil
 }
 
 // SetSize changes how many players a rally takes, the leader included;
