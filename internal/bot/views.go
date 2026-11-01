@@ -126,7 +126,7 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 		discordgo.Button{CustomID: customID(actLeave, p.ID), Label: l.T("card.leave"), Style: discordgo.SecondaryButton,
 			Disabled: !p.Active()},
 		// Manage stays on after the post ends, so the leader can reopen it.
-		manageButton(p.ID, false, l),
+		manageButton(p.ID, true, l),
 	}})
 
 	footer := l.T("card.footer_open", p.ID, p.ExpiresAt.Unix())

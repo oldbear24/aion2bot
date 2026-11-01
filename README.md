@@ -37,7 +37,7 @@ It uses Discord's new components:
    The character name shows on the post and in Manage, so the leader knows whom to invite; accepted players see the leader's.
    - **Reserves.** Once the party is full, **Join as reserve** puts players on a reserve list. When a party member leaves or is removed,
      the first reserve with the same role takes the slot and is pinged; without one, the slot opens again and the leader can accept any reserve.
-6. **Manage.** The leader clicks the green **Manage** on any copy of the post to accept or decline players and reserves, change the gear score, start time and note (✏️),
+6. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players and reserves, change the gear score, start time and note (✏️),
    adjust the missing count when someone joins outside the bot, **Close** the post, or **Delete** it from every server right away.
    A changed start moves the expiry with it, and the threads get a note of what changed.
    - **Change dungeon** (🗺️) takes the post to another dungeon or difficulty with everyone on it: the party, the players waiting and the reserves.
@@ -189,6 +189,7 @@ in text and on buttons and menu options; placeholders, labels and forms keep the
 
 Everything is stored in SQLite at `data/aion2bot.db` (change it with `DB_FILE`; `/data/aion2bot.db` in the Docker image). The driver is pure Go, so no C compiler is needed.
 Newer versions upgrade an older database on start. Posts, profiles and alerts are kept; ended runs stay in the stats for 90 days.
+Every card still shown, open or ended, is redrawn on start, so it picks up a new version's layout and icons.
 On first start, a `data/store.json` from older versions is imported and renamed to `store.json.imported`; servers from it are linked into one network, because older versions shared posts with every server.
 
 ## Project layout

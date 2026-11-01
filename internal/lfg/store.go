@@ -310,6 +310,12 @@ func (s *Store) ActivePosts() []Post {
 	return s.postsWhere(`SELECT id FROM posts WHERE status IN ` + activeStatuses + ` ORDER BY created_at, id`)
 }
 
+// ShownPosts lists the posts still on Discord: the open ones, and the ended
+// ones until the cleanup deletes them a day after they end.
+func (s *Store) ShownPosts() []Post {
+	return s.postsWhere(`SELECT id FROM posts ORDER BY created_at, id`)
+}
+
 func (s *Store) postsWhere(query string, args ...any) []Post {
 	ids, err := queryIDs(s.db, query, args...)
 	if err != nil {

@@ -167,15 +167,19 @@ func buttonsOf(c discordgo.MessageComponent) map[string]discordgo.Button {
 	return out
 }
 
-func TestManageIsGreenAndReopens(t *testing.T) {
+func TestManageButtonAndReopen(t *testing.T) {
 	b := testBot(t)
 	p, _ := notePost()
-	if m := buttonsOf(b.joinNote(p, p.Accepted[0], false, "g1", i18n.English))[customID(actManage, p.ID)]; m.Style != discordgo.SuccessButton {
+	// Grey where everyone sees it, green where only the leader does.
+	if m := buttonsOf(b.joinNote(p, p.Accepted[0], false, "g1", i18n.English))[customID(actManage, p.ID)]; m.Style != discordgo.SecondaryButton {
 		t.Errorf("join note's Manage button %+v", m)
 	}
 	card := b.postCard(p, "g1", "", i18n.English)
-	if m := buttonsOf(card[0])[customID(actManage, p.ID)]; m.Style != discordgo.SuccessButton || m.Disabled {
+	if m := buttonsOf(card[0])[customID(actManage, p.ID)]; m.Style != discordgo.SecondaryButton || m.Disabled {
 		t.Errorf("card's Manage button %+v", m)
+	}
+	if m := manageRow(p.ID, i18n.English).Components[0].(discordgo.Button); m.Style != discordgo.SuccessButton {
+		t.Errorf("leader's own Manage button %+v", m)
 	}
 	if _, ok := buttonsOf(b.managePanel(p, i18n.English))[customID(actMove, p.ID)]; !ok {
 		t.Error("the manage panel of an open post has no dungeon change")

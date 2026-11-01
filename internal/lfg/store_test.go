@@ -504,3 +504,28 @@ func TestReopenPost(t *testing.T) {
 		t.Fatalf("reopen twice: %v", err)
 	}
 }
+
+func TestShownPostsIncludeEndedOnes(t *testing.T) {
+	s, _ := openTestStore(t)
+	now := time.Now()
+	var ids []string
+	for range 3 {
+		p := newPost(1)
+		p.CreatedAt, p.ExpiresAt = now, now.Add(time.Hour)
+		p, err := s.CreatePost(p, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, p.ID)
+	}
+	s.UpdatePost(ids[1], func(p *Post) error { return p.Close(StatusClosed, now) })
+	s.DeletePost(ids[2])
+
+	var shown []string
+	for _, p := range s.ShownPosts() {
+		shown = append(shown, p.ID)
+	}
+	if len(shown) != 2 || !slices.Contains(shown, ids[0]) || !slices.Contains(shown, ids[1]) {
+		t.Fatalf("shown %v, want the open and the closed post of %v", shown, ids)
+	}
+}

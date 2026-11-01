@@ -124,8 +124,9 @@ func (b *Bot) Start() error {
 		b.s.Close()
 		return err
 	}
-	// Bring the open posts up to date with this version's layout.
-	for _, p := range b.store.ActivePosts() {
+	// Bring every card still shown up to date with this version's layout,
+	// the ended ones too: their Manage button is how the leader reopens them.
+	for _, p := range b.store.ShownPosts() {
 		b.scheduleSync(p.ID)
 	}
 	go b.maintenance()

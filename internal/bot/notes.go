@@ -27,7 +27,7 @@ func (b *Bot) joinNote(p lfg.Post, pl lfg.Player, reserve bool, guildID string, 
 	return container(color,
 		text(l.T(title)+"\n"+l.T(intro, leader, b.runName(p))+"\n"+b.memberLine(p, pl, guildID, false, l)),
 		divider(),
-		discordgo.Section{Components: []discordgo.MessageComponent{text(l.T(hint))}, Accessory: manageButton(p.ID, false, l)},
+		discordgo.Section{Components: []discordgo.MessageComponent{text(l.T(hint))}, Accessory: manageButton(p.ID, true, l)},
 		text(l.T("thread.join_footer")),
 	)
 }
@@ -117,8 +117,13 @@ func (b *Bot) reopenNote(p lfg.Post, guildID string, l i18n.Lang) discordgo.Mess
 	)
 }
 
-// manageButton opens the leader's panel; it is green wherever it shows.
-func manageButton(postID string, disabled bool, l i18n.Lang) discordgo.Button {
-	return discordgo.Button{CustomID: customID(actManage, postID), Label: l.T("card.manage"), Style: discordgo.SuccessButton,
-		Emoji: emoji("⚙️"), Disabled: disabled}
+// manageButton opens the leader's panel. It is grey where everyone sees
+// it, on the card and in the threads, and green where only the leader
+// does.
+func manageButton(postID string, public bool, l i18n.Lang) discordgo.Button {
+	style := discordgo.SuccessButton
+	if public {
+		style = discordgo.SecondaryButton
+	}
+	return discordgo.Button{CustomID: customID(actManage, postID), Label: l.T("card.manage"), Style: style, Emoji: emoji("⚙️")}
 }
