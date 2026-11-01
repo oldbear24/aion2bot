@@ -45,6 +45,10 @@ type Bot struct {
 	// members tells where the people on posts can be linked with mentions.
 	members memberCache
 
+	// icons replaces the emojis in messages with the bot's own icons. It is
+	// set before connecting and never changes after.
+	icons iconSet
+
 	// relayMu keeps each thread's relayed messages in order (see relayLock).
 	relayMu [16]sync.Mutex
 	// hookMu guards setting up webhooks; hookFailed remembers when it last
@@ -100,9 +104,10 @@ func (b *Bot) Start() error {
 	if me, err := b.s.User("@me"); err != nil {
 		return fmt.Errorf("connect to Discord: %w", err)
 	} else if icons, err := appemoji.Sync(b.s, me.ID); err != nil {
-		log.Printf("upload role and class icons, using the emojis from the game file: %v", err)
+		log.Printf("upload the icons, using emojis instead: %v", err)
 	} else {
 		b.game.UseIcons(icons)
+		b.icons = newIconSet(icons)
 	}
 
 	err := b.s.Open()

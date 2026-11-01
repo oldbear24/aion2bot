@@ -199,3 +199,56 @@ func TestAdjustMissingAndClose(t *testing.T) {
 		t.Fatalf("accept on closed post: got %v", err)
 	}
 }
+
+func TestMoveKeepsTheParty(t *testing.T) {
+	p := newPost(4)
+	p.AddApplicant(Player{UserID: "a"})
+	p.Accept([]string{"a"})
+	p.AddApplicant(Player{UserID: "w"})
+	// Leader and a in a party of 5, one more found outside the bot: 2 missing.
+	p.AdjustMissing(-1, 4)
+
+	if err := p.Move("draupnir", "hard", 5, 10, 9); err != nil || p.Missing != 7 || p.Status != StatusOpen {
+		t.Fatalf("to a raid: err %v missing %d status %s", err, p.Missing, p.Status)
+	}
+	if p.DungeonID != "draupnir" || p.ModeID != "hard" || len(p.Accepted) != 1 || len(p.Applicants) != 1 {
+		t.Fatalf("move lost something: %+v", p)
+	}
+	if err := p.Move("depot", "easy", 10, 3, 2); err != nil || p.Missing != 0 || p.Status != StatusFull {
+		t.Fatalf("to a party of 3: err %v missing %d status %s", err, p.Missing, p.Status)
+	}
+	if err := p.Move("tiny", "", 3, 2, 1); !errors.Is(err, ErrPartyTooBig) || p.DungeonID != "depot" {
+		t.Fatalf("party of 3 into 2: err %v dungeon %s", err, p.DungeonID)
+	}
+	// Without a known size, only the missing count's cap applies.
+	if err := p.Move("unknown", "", 3, 0, 9); err != nil || p.Missing != 0 {
+		t.Fatalf("unknown size: err %v missing %d", err, p.Missing)
+	}
+	p.Close(StatusClosed, time.Now())
+	if err := p.Move("krao", "", 0, 5, 4); !errors.Is(err, ErrNotOpen) {
+		t.Fatalf("move a closed post: %v", err)
+	}
+}
+
+func TestReopen(t *testing.T) {
+	now := time.Now()
+	p := newPost(2)
+	p.ExpiresAt = now.Add(time.Hour)
+	p.AddApplicant(Player{UserID: "a"})
+	p.Accept([]string{"a"})
+	if err := p.Reopen(time.Hour, now); !errors.Is(err, ErrStillOpen) {
+		t.Fatalf("reopen an open post: %v", err)
+	}
+	p.Close(StatusClosed, now)
+	if err := p.Reopen(3*time.Hour, now); err != nil || p.Status != StatusOpen || !p.ClosedAt.IsZero() ||
+		!p.ExpiresAt.Equal(now.Add(time.Hour)) || len(p.Accepted) != 1 {
+		t.Fatalf("reopen: err %v %+v", err, p)
+	}
+	// An expired post gets a fresh expiry; a full one stays full.
+	p.AdjustMissing(-1, 9)
+	p.Close(StatusExpired, now)
+	p.ExpiresAt = now.Add(-time.Minute)
+	if err := p.Reopen(3*time.Hour, now); err != nil || p.Status != StatusFull || !p.ExpiresAt.Equal(now.Add(3*time.Hour)) {
+		t.Fatalf("reopen expired: err %v status %s expires %v", err, p.Status, p.ExpiresAt)
+	}
+}

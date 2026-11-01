@@ -29,6 +29,8 @@ var (
 	ErrTooManyJoined = errors.New("too many applicants")
 	ErrTooManyPosts  = errors.New("leader has too many open posts")
 	ErrGearScore     = errors.New("gear score below the post's requirement")
+	ErrStillOpen     = errors.New("post has not ended")
+	ErrPartyTooBig   = errors.New("party doesn't fit the dungeon")
 )
 
 // GuildConfig is where a server wants LFG posts delivered.
@@ -319,6 +321,51 @@ func (p *Post) SetDetails(minGS int, startAt time.Time, note string, ttl time.Du
 			p.ExpiresAt = startAt.Add(ttl)
 		}
 	}
+	return nil
+}
+
+// Filled is how many slots of a party of size the post takes: the
+// leader, the accepted players and, when the size is known, the players
+// found outside the bot.
+func (p *Post) Filled(size int) int {
+	if size <= 0 {
+		return len(p.Party())
+	}
+	return max(len(p.Party()), size-p.Missing)
+}
+
+// Move takes the post to another dungeon or mode, whose party has newSize
+// players (zero if unknown) instead of oldSize. Everyone on the post stays,
+// and so do the players found outside the bot, so the party fills as many
+// slots as before. It fails with ErrPartyTooBig when the party doesn't fit.
+func (p *Post) Move(dungeonID, modeID string, oldSize, newSize, maxMissing int) error {
+	if !p.Active() {
+		return ErrNotOpen
+	}
+	missing := p.Missing
+	if newSize > 0 {
+		filled := p.Filled(oldSize)
+		if filled > newSize {
+			return ErrPartyTooBig
+		}
+		missing = newSize - filled
+	}
+	p.DungeonID, p.ModeID, p.Missing = dungeonID, modeID, max(0, min(missing, maxMissing))
+	p.refreshStatus()
+	return nil
+}
+
+// Reopen puts an ended post back up, with everyone who was on it. A post
+// whose expiry has passed gets ttl from now.
+func (p *Post) Reopen(ttl time.Duration, now time.Time) error {
+	if p.Active() {
+		return ErrStillOpen
+	}
+	p.Status, p.ClosedAt = StatusOpen, time.Time{}
+	if !p.ExpiresAt.After(now) {
+		p.ExpiresAt = now.Add(ttl)
+	}
+	p.refreshStatus()
 	return nil
 }
 

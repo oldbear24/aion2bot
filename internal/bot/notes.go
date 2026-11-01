@@ -27,7 +27,7 @@ func (b *Bot) joinNote(p lfg.Post, pl lfg.Player, reserve bool, guildID string, 
 	return container(color,
 		text(l.T(title)+"\n"+l.T(intro, leader, b.runName(p))+"\n"+b.memberLine(p, pl, guildID, false, l)),
 		divider(),
-		discordgo.Section{Components: []discordgo.MessageComponent{text(l.T(hint))}, Accessory: manageButton(p.ID, l)},
+		discordgo.Section{Components: []discordgo.MessageComponent{text(l.T(hint))}, Accessory: manageButton(p.ID, false, l)},
 		text(l.T("thread.join_footer")),
 	)
 }
@@ -96,7 +96,29 @@ func (b *Bot) changesNote(before, after lfg.Post, guildID string, l i18n.Lang) d
 	)
 }
 
-func manageButton(postID string, l i18n.Lang) discordgo.Button {
-	return discordgo.Button{CustomID: customID(actManage, postID), Label: l.T("card.manage"), Style: discordgo.PrimaryButton,
-		Emoji: emoji("⚙️")}
+// moveNote tells the threads the leader took the post to another dungeon
+// or mode, and how the party stands there.
+func (b *Bot) moveNote(before, after lfg.Post, guildID string, l i18n.Lang) discordgo.MessageComponent {
+	leader := who(after.LeaderID, after.LeaderName, b.mentionable(after.LeaderID, after.GuildID, guildID))
+	return container(statusColor(after.Status),
+		text(l.T("thread.moved_title")+"\n"+l.T("thread.moved", leader, b.runName(before), b.runName(after))),
+		divider(),
+		text(b.statusLine(after, l)),
+	)
+}
+
+// reopenNote tells the threads the leader put an ended post back up.
+func (b *Bot) reopenNote(p lfg.Post, guildID string, l i18n.Lang) discordgo.MessageComponent {
+	leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
+	return container(statusColor(p.Status),
+		text(l.T("thread.reopened_title")+"\n"+l.T("thread.reopened", leader)),
+		divider(),
+		text(b.statusLine(p, l)),
+	)
+}
+
+// manageButton opens the leader's panel; it is green wherever it shows.
+func manageButton(postID string, disabled bool, l i18n.Lang) discordgo.Button {
+	return discordgo.Button{CustomID: customID(actManage, postID), Label: l.T("card.manage"), Style: discordgo.SuccessButton,
+		Emoji: emoji("⚙️"), Disabled: disabled}
 }

@@ -316,7 +316,7 @@ func (b *Bot) tooManyRuns(open []lfg.Post, l i18n.Lang) discordgo.MessageCompone
 		fmt.Fprintf(&lines, "\n%d. **%s** %s", n+1, dungeon.Name, difficultyLine(dungeon, p.ModeID, 0, l))
 		if len(buttons) < 5 {
 			buttons = append(buttons, discordgo.Button{CustomID: customID(actManage, p.ID),
-				Label: truncate(fmt.Sprintf("%d. %s", n+1, dungeon.Name), 80), Style: discordgo.SecondaryButton})
+				Label: truncate(fmt.Sprintf("%d. %s", n+1, dungeon.Name), 80), Style: discordgo.SuccessButton, Emoji: emoji("⚙️")})
 		}
 	}
 	comps := []discordgo.MessageComponent{text(l.T("draft.too_many", l.N(len(open), "n.post"), lines.String()))}

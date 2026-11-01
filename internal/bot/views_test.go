@@ -77,7 +77,8 @@ func busyPost(b *Bot) lfg.Post {
 // and the characters in all text displays.
 func measure(t *testing.T, comps ...discordgo.MessageComponent) (count, textLen int) {
 	t.Helper()
-	raw, err := json.Marshal(comps)
+	// Measured with every icon in place, the longest a message gets.
+	raw, err := json.Marshal(testIcons.apply(comps))
 	if err != nil {
 		t.Fatal(err)
 	}

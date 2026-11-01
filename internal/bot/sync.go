@@ -110,6 +110,9 @@ func (b *Bot) broadcast(p lfg.Post, guilds []lfg.GuildConfig, ping bool) (sent, 
 	if ok && stored.Revision != p.Revision {
 		b.scheduleSync(p.ID)
 	}
+	if ok {
+		b.startThreads(stored, refs)
+	}
 	return len(refs), failed
 }
 

@@ -1,6 +1,7 @@
-// Package emoji uploads the role and class icons bundled with the bot as
-// application emojis, which the bot can show on every server, along with
-// the crown that marks a party's leader.
+// Package emoji uploads the icons bundled with the bot as application
+// emojis, which the bot can show on every server: the role and class
+// icons, the crown that marks a party's leader, and the interface icons
+// that stand in for the emojis in its messages.
 package emoji
 
 import (
@@ -17,10 +18,15 @@ import (
 )
 
 // images holds one 128×128 PNG per role or class, named after its id in
-// game.json, e.g. tank.png or gladiator.png, and leader.png.
+// game.json, e.g. tank.png or gladiator.png, and leader.png. images/ui
+// holds the interface icons, drawn by tools/icons; their ids start with
+// "ui_", e.g. ui_join.
 //
-//go:embed images/*.png
+//go:embed images/*.png images/ui/*.png
 var images embed.FS
+
+// uiDir holds the interface icons.
+const uiDir = "images/ui"
 
 // prefix marks the application emojis this package manages. Each name ends
 // with a hash of the image, so a changed icon is uploaded as a new emoji
@@ -33,14 +39,19 @@ type icon struct {
 }
 
 // Sync makes sure every bundled icon is an application emoji and returns
-// them by role or class id, written the way messages show them, e.g.
-// "<:lfg_tank_1a2b3c:123456789012345678>". Icons that can't be uploaded
-// are left out.
+// them by role or class id, or ui_ id, written the way messages show them,
+// e.g. "<:lfg_tank_1a2b3c:123456789012345678>". Icons that can't be
+// uploaded are left out.
 func Sync(s *discordgo.Session, appID string) (map[string]string, error) {
 	files, err := fs.Glob(images, "images/*.png")
 	if err != nil {
 		return nil, err
 	}
+	ui, err := fs.Glob(images, uiDir+"/*.png")
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, ui...)
 	want := map[string]icon{}
 	for _, f := range files {
 		png, err := images.ReadFile(f)
@@ -49,6 +60,9 @@ func Sync(s *discordgo.Session, appID string) (map[string]string, error) {
 		}
 		sum := sha256.Sum256(png)
 		id := strings.TrimSuffix(path.Base(f), ".png")
+		if path.Dir(f) == uiDir {
+			id = "ui_" + id
+		}
 		want[prefix+id+"_"+hex.EncodeToString(sum[:3])] = icon{id, png}
 	}
 

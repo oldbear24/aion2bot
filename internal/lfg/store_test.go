@@ -462,3 +462,45 @@ func TestImportJSON(t *testing.T) {
 		t.Fatalf("imported servers should stay linked: %+v", n)
 	}
 }
+
+func TestReopenPost(t *testing.T) {
+	s, _ := openTestStore(t)
+	now := time.Now()
+	create := func() Post {
+		p := newPost(1)
+		p.GuildID, p.CreatedAt, p.ExpiresAt = "g1", now, now.Add(time.Hour)
+		p, err := s.CreatePost(p, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	closed := create()
+	s.UpdatePost(closed.ID, func(p *Post) error { return p.Close(StatusClosed, now) })
+	if runs := s.Runs([]string{"g1"}, now.Add(-time.Hour)); len(runs) != 1 || runs[0].Status != StatusClosed {
+		t.Fatalf("closed run %+v", runs)
+	}
+
+	// Two open posts are the most here, so the closed one can't come back.
+	other := create()
+	create()
+	if _, err := s.ReopenPost(closed.ID, 2, time.Hour, now); !errors.Is(err, ErrTooManyPosts) {
+		t.Fatalf("reopen past the limit: %v", err)
+	}
+	s.UpdatePost(other.ID, func(p *Post) error { return p.Close(StatusClosed, now) })
+	p, err := s.ReopenPost(closed.ID, 2, time.Hour, now)
+	if err != nil || p.Status != StatusOpen {
+		t.Fatalf("reopen: err %v status %s", err, p.Status)
+	}
+	// It counts once, as open, not also as ended.
+	statuses := map[Status]int{}
+	for _, r := range s.Runs([]string{"g1"}, now.Add(-time.Hour)) {
+		statuses[r.Status]++
+	}
+	if statuses[StatusOpen] != 2 || statuses[StatusClosed] != 1 {
+		t.Fatalf("runs after reopening: %v", statuses)
+	}
+	if _, err := s.ReopenPost(closed.ID, 5, time.Hour, now); !errors.Is(err, ErrStillOpen) {
+		t.Fatalf("reopen twice: %v", err)
+	}
+}

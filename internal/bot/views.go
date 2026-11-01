@@ -26,7 +26,9 @@ const (
 	rosterBudget = 2800
 )
 
-// Post components use "lfg:<action>:<postID>".
+// Post components use "lfg:<action>:<postID>". The dungeon change also
+// carries the leader's pick after the post's ID, as ":<dungeonID>" or
+// ":<dungeonID>:<modeID>".
 const (
 	actJoin      = "join"
 	actJoinForm  = "joinform"
@@ -42,6 +44,11 @@ const (
 	actPanel     = "panel"
 	actEdit      = "edit"
 	actEditForm  = "editform"
+	actReopen    = "reopen"
+	actMove      = "move"
+	actMoveTo    = "moveto"
+	actMoveMode  = "movemode"
+	actMoveYes   = "moveyes"
 )
 
 // The /lfg panel uses "lfgd:<field>". It is ephemeral, so the draft is
@@ -87,23 +94,11 @@ func (b *Bot) guildLang(guildID string) i18n.Lang {
 // mentions.
 func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []discordgo.MessageComponent {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
-
-	var status string
-	switch p.Status {
-	case lfg.StatusOpen:
-		status = l.T("card.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
-	case lfg.StatusFull:
-		status = l.T("card.full") + partyFill(dungeon, p) + l.T("card.reserves_welcome")
-	case lfg.StatusClosed:
-		status = l.T("card.closed")
-	case lfg.StatusExpired:
-		status = l.T("card.expired")
-	}
 	header := "## " + strings.TrimSpace(dungeon.Emoji+" "+dungeon.Name)
 	if line := difficultyLine(dungeon, p.ModeID, p.MinGS, l); line != "" {
 		header += "\n" + line
 	}
-	header += "\n" + status
+	header += "\n" + b.statusLine(p, l)
 
 	info := l.T("card.start") + startText(p.StartAt, p.Start, l)
 
@@ -130,8 +125,8 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 		join,
 		discordgo.Button{CustomID: customID(actLeave, p.ID), Label: l.T("card.leave"), Style: discordgo.SecondaryButton,
 			Disabled: !p.Active()},
-		discordgo.Button{CustomID: customID(actManage, p.ID), Label: l.T("card.manage"), Style: discordgo.SecondaryButton,
-			Emoji: emoji("⚙️"), Disabled: !p.Active()},
+		// Manage stays on after the post ends, so the leader can reopen it.
+		manageButton(p.ID, false, l),
 	}})
 
 	footer := l.T("card.footer_open", p.ID, p.ExpiresAt.Unix())
@@ -145,6 +140,21 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 		out = append(out, text("<@&"+pingRoleID+">"))
 	}
 	return append(out, container(statusColor(p.Status), body...))
+}
+
+// statusLine is how the party stands, as the card shows it: "Looking for
+// 2 more (3/5) — 🟦 Tank", full, closed or expired.
+func (b *Bot) statusLine(p lfg.Post, l i18n.Lang) string {
+	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
+	switch p.Status {
+	case lfg.StatusOpen:
+		return l.T("card.looking", p.Missing, partyFill(dungeon, p), b.lookingForList(p.LookingFor, l))
+	case lfg.StatusFull:
+		return l.T("card.full") + partyFill(dungeon, p) + l.T("card.reserves_welcome")
+	case lfg.StatusClosed:
+		return l.T("card.closed")
+	}
+	return l.T("card.expired")
 }
 
 // difficultyLine is "**Conquest [Hard]** · GS 4,500+", or less when the
@@ -439,8 +449,12 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 		divider(), text(b.rosterText(p, "", true, l))}
 	if !p.Active() {
 		comps = append(comps,
-			discordgo.ActionsRow{Components: []discordgo.MessageComponent{deleteButton}},
-			text(l.T("manage.disappears", p.ClosedAt.Add(keepEndedPosts).Unix())))
+			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+				discordgo.Button{CustomID: customID(actReopen, p.ID), Label: l.T("manage.reopen"), Style: discordgo.SuccessButton,
+					Emoji: emoji("🔓")},
+				deleteButton,
+			}},
+			text(l.T("manage.disappears", p.ClosedAt.Add(keepEndedPosts).Unix())+"\n"+l.T("manage.ended_reopen")))
 		return container(statusColor(p.Status), comps...)
 	}
 
@@ -456,10 +470,14 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.Button{CustomID: customID(actEdit, p.ID), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
 				Emoji: emoji("✏️")},
+			discordgo.Button{CustomID: customID(actMove, p.ID), Label: l.T("manage.move"), Style: discordgo.SecondaryButton,
+				Emoji: emoji("🗺️")},
 			discordgo.Button{CustomID: customID(actLess, p.ID), Label: l.T("manage.less"),
 				Style: discordgo.SecondaryButton, Disabled: p.Missing == 0},
 			discordgo.Button{CustomID: customID(actMore, p.ID), Label: l.T("manage.more"),
 				Style: discordgo.SecondaryButton, Disabled: p.Missing >= dungeon.MaxMissing(p.ModeID, b.game.MaxMissing)},
+		}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.Button{CustomID: customID(actClose, p.ID), Label: l.T("manage.close"), Style: discordgo.SecondaryButton,
 				Emoji: emoji("🔒")},
 			deleteButton,
@@ -479,6 +497,63 @@ func (b *Bot) confirmDelete(p lfg.Post, l i18n.Lang) discordgo.MessageComponent 
 			discordgo.Button{CustomID: customID(actPanel, p.ID), Label: l.T("delete.keep"), Style: discordgo.SecondaryButton},
 		}},
 	)
+}
+
+// movePanel lets the leader take the post, with everyone on it, to
+// another dungeon or mode. The pick travels in the custom IDs until the
+// leader confirms it, so nothing is kept in memory.
+func (b *Bot) movePanel(p lfg.Post, dungeonID, modeID string, l i18n.Lang) discordgo.MessageComponent {
+	to, chosen := b.game.Dungeon(dungeonID)
+	if !chosen {
+		dungeonID, modeID = "", ""
+	} else if _, ok := to.Mode(modeID); !ok {
+		modeID = firstMode(to)
+	}
+
+	comps := []discordgo.MessageComponent{
+		text(l.T("move.title") + "\n" + l.T("move.help", b.runName(p))),
+		text(l.T("draft.dungeon")),
+		selectRow(customID(actMoveTo, p.ID), l.T("draft.dungeon_ph"), 1, b.dungeonOptions(dungeonID, l)),
+	}
+	if chosen && len(to.Modes) > 0 {
+		comps = append(comps,
+			text(l.T("draft.mode")),
+			selectRow(customID(actMoveMode, p.ID+":"+dungeonID), l.T("draft.mode_ph"), 1, modeOptions(to, modeID, l)))
+	}
+
+	confirm := discordgo.Button{CustomID: customID(actMoveYes, p.ID+":"+dungeonID+":"+modeID), Label: l.T("move.yes"),
+		Style: discordgo.SuccessButton, Emoji: emoji("✅")}
+	moved := p
+	fromSize := b.game.DungeonOrUnknown(p.DungeonID).PartySizeFor(p.ModeID)
+	size := to.PartySizeFor(modeID)
+	switch {
+	case !chosen || !p.Active() || dungeonID == p.DungeonID && modeID == p.ModeID:
+		confirm.Disabled = true
+	// With the post active, a move only fails when the party doesn't fit.
+	case moved.Move(dungeonID, modeID, fromSize, size, to.MaxMissing(modeID, b.game.MaxMissing)) != nil:
+		confirm.Disabled = true
+		moved.DungeonID, moved.ModeID = dungeonID, modeID
+		comps = append(comps, divider(),
+			text("⚠️ "+l.T("move.too_big", l.N(p.Filled(fromSize), "n.player"), b.runName(moved), size)))
+	default:
+		comps = append(comps, divider(), text(l.T("move.preview", b.runName(moved), b.statusLine(moved, l))))
+	}
+	// Custom IDs hold at most 100 characters.
+	confirm.Disabled = confirm.Disabled || len(confirm.CustomID) > 100
+
+	comps = append(comps, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+		confirm,
+		discordgo.Button{CustomID: customID(actPanel, p.ID), Label: l.T("move.back"), Style: discordgo.SecondaryButton},
+	}})
+	return container(statusColor(p.Status), comps...)
+}
+
+// firstMode is the easiest mode of a dungeon, or none.
+func firstMode(d config.Dungeon) string {
+	if len(d.Modes) == 0 {
+		return ""
+	}
+	return d.Modes[0].ID
 }
 
 // dungeonOptions describes each dungeon as "Expedition · 5 players ·

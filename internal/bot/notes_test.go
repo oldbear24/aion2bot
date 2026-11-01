@@ -142,3 +142,96 @@ func TestThreadNotesFitDiscordLimits(t *testing.T) {
 		}
 	}
 }
+
+// buttonsOf maps the custom IDs of a panel's buttons to the buttons.
+func buttonsOf(c discordgo.MessageComponent) map[string]discordgo.Button {
+	out := map[string]discordgo.Button{}
+	var walk func(c discordgo.MessageComponent)
+	walk = func(c discordgo.MessageComponent) {
+		switch v := c.(type) {
+		case discordgo.Container:
+			for _, cc := range v.Components {
+				walk(cc)
+			}
+		case discordgo.ActionsRow:
+			for _, cc := range v.Components {
+				walk(cc)
+			}
+		case discordgo.Section:
+			walk(v.Accessory)
+		case discordgo.Button:
+			out[v.CustomID] = v
+		}
+	}
+	walk(c)
+	return out
+}
+
+func TestManageIsGreenAndReopens(t *testing.T) {
+	b := testBot(t)
+	p, _ := notePost()
+	if m := buttonsOf(b.joinNote(p, p.Accepted[0], false, "g1", i18n.English))[customID(actManage, p.ID)]; m.Style != discordgo.SuccessButton {
+		t.Errorf("join note's Manage button %+v", m)
+	}
+	card := b.postCard(p, "g1", "", i18n.English)
+	if m := buttonsOf(card[0])[customID(actManage, p.ID)]; m.Style != discordgo.SuccessButton || m.Disabled {
+		t.Errorf("card's Manage button %+v", m)
+	}
+	if _, ok := buttonsOf(b.managePanel(p, i18n.English))[customID(actMove, p.ID)]; !ok {
+		t.Error("the manage panel of an open post has no dungeon change")
+	}
+
+	// An ended post keeps Manage on its card, and its panel offers Reopen.
+	p.Close(lfg.StatusClosed, time.Now())
+	card = b.postCard(p, "g1", "", i18n.English)
+	buttons := buttonsOf(card[0])
+	if m := buttons[customID(actManage, p.ID)]; m.Disabled || !buttons[customID(actJoin, p.ID)].Disabled {
+		t.Errorf("ended card buttons %+v", buttons)
+	}
+	if r, ok := buttonsOf(b.managePanel(p, i18n.English))[customID(actReopen, p.ID)]; !ok || r.Style != discordgo.SuccessButton {
+		t.Errorf("ended panel has no green Reopen: %+v", r)
+	}
+}
+
+func TestMovePanel(t *testing.T) {
+	b := testBot(t)
+	p, _ := notePost() // Krao Cave, a party of 5: leader, Tom, 2 missing, so 1 found outside
+	p.Missing = 2
+	yes := func(dungeonID, modeID string) (discordgo.Button, string) {
+		panel := b.movePanel(p, dungeonID, modeID, i18n.English)
+		texts, _ := noteParts(t, panel)
+		for id, btn := range buttonsOf(panel) {
+			if strings.HasPrefix(id, "lfg:"+actMoveYes+":") {
+				return btn, texts
+			}
+		}
+		t.Fatalf("no confirm button for %s/%s", dungeonID, modeID)
+		return discordgo.Button{}, ""
+	}
+
+	if btn, _ := yes(p.DungeonID, p.ModeID); !btn.Disabled {
+		t.Error("moving to the same dungeon and mode can be confirmed")
+	}
+	// Dredgion Depot takes 4: leader, Tom and the one found outside fit.
+	btn, texts := yes("dredgion-depot", "")
+	action, rest, _ := parseCustomID(btn.CustomID)
+	postID, pick, _ := strings.Cut(rest, ":")
+	dungeonID, modeID, _ := strings.Cut(pick, ":")
+	if btn.Disabled || action != actMoveYes || postID != p.ID || dungeonID != "dredgion-depot" || modeID != "easy" {
+		t.Errorf("confirm %+v → %s %s %s %s", btn, action, postID, dungeonID, modeID)
+	}
+	if !strings.Contains(texts, "Dredgion Depot") || !strings.Contains(texts, "(3/4)") {
+		t.Errorf("move preview:\n%s", texts)
+	}
+	// A full party of 5, three of them found outside, doesn't fit into 4.
+	p.Missing = 0
+	if btn, texts := yes("dredgion-depot", "hard"); !btn.Disabled || !strings.Contains(texts, "⚠️") {
+		t.Errorf("a party too big can be moved: %+v\n%s", btn, texts)
+	}
+	for _, l := range i18n.Langs {
+		count, textLen := measure(t, b.movePanel(p, "abyssal-forge-ludra", "hard", l))
+		if count > maxComponents || textLen > maxTextLength {
+			t.Errorf("%s move panel: %d components, %d characters", l, count, textLen)
+		}
+	}
+}

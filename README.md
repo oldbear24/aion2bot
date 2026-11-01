@@ -37,10 +37,15 @@ It uses Discord's new components:
    The character name shows on the post and in Manage, so the leader knows whom to invite; accepted players see the leader's.
    - **Reserves.** Once the party is full, **Join as reserve** puts players on a reserve list. When a party member leaves or is removed,
      the first reserve with the same role takes the slot and is pinged; without one, the slot opens again and the leader can accept any reserve.
-6. **Manage.** The leader clicks **Manage** on any copy of the post to accept or decline players and reserves, change the gear score, start time and note (✏️),
+6. **Manage.** The leader clicks the green **Manage** on any copy of the post to accept or decline players and reserves, change the gear score, start time and note (✏️),
    adjust the missing count when someone joins outside the bot, **Close** the post, or **Delete** it from every server right away.
    A changed start moves the expiry with it, and the threads get a note of what changed.
-7. **Threads.** Each copy of a post gets a thread on its server, started when the first player joins, and the bot keeps them alike:
+   - **Change dungeon** (🗺️) takes the post to another dungeon or difficulty with everyone on it: the party, the players waiting and the reserves.
+     The players found outside the bot stay too, so the party fills as many slots as before; a party that doesn't fit the new size can't move there.
+     The cards and the thread names follow, and the threads get a note.
+   - **Reopen** puts a closed or expired post back up, with everyone who was on it, until it's deleted 24 hours after it ended.
+     **Manage** stays on the card of an ended post for this. A reopened post counts towards `max_runs_per_leader` again, and gets `post_ttl_hours` more if it had expired.
+7. **Threads.** Each copy of a post gets a thread on its server as soon as it goes up, so anyone can ask the leader about the run, and the bot keeps them alike:
    - Its notes go to every thread, in each server's language, as small cards like the post: a heading, who it's for, then the details
      (the player who joined with a ⚙️ **Manage** button, the role and start for an accepted player, the party by role in the reminder). Everyone is pinged **once** per run, on the server they posted or joined from:
      the leader when the first player joins, each player when they're accepted (or move up from the reserves). After that, changes only edit the card, which never notifies anyone.
@@ -175,6 +180,11 @@ and used instead of the `emoji` in `game.json`, which stays as the fallback (for
 `leader.png` is the party leader's crown, with 👑 as its fallback.
 A changed image is uploaded again on the next start and the old emoji deleted.
 
+The emojis in the bot's messages (✋ Join, ⚙️ Manage, 🕒 start, ✅ ⏳ 🪑 in the party list, the dungeon types, and the rest) get icons in the same style:
+`internal/emoji/images/ui/<name>.png`, drawn by `python tools/icons/draw_ui_icons.py` (needs Pillow; `--sheet out.png` writes a preview next to the role and class icons).
+`internal/bot/icons.go` maps each emoji to its icon. Messages are written with the emojis, and the icons replace them as they're sent,
+in text and on buttons and menu options; placeholders, labels and forms keep the emojis, since Discord can't show custom ones there.
+
 ## Data
 
 Everything is stored in SQLite at `data/aion2bot.db` (change it with `DB_FILE`; `/data/aion2bot.db` in the Docker image). The driver is pure Go, so no C compiler is needed.
@@ -189,7 +199,8 @@ game.json           dungeons, modes, roles and classes
 Dockerfile          the release image; compose.yaml runs it
 .github/workflows   CI (tests, image build) and releases
 internal/config     game.json and .env loading, role/class matching
-internal/emoji      role, class and leader icons, uploaded as application emojis
+internal/emoji      role, class, leader and interface icons, uploaded as application emojis
+tools/icons         draws the interface icons
 internal/lfg        post rules and reserves, SQLite storage, networks, profiles, alerts, run history
 internal/bot        commands, panels, forms, cross-server sync, shared threads, reminders, alerts, search, stats, cleanup
 ```

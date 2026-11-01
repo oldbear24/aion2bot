@@ -361,6 +361,30 @@ func (s *Store) CreatePost(p Post, maxActive int) (Post, error) {
 // makes to Messages are not saved; use AddMessages and RemoveMessage. A
 // post that ends is kept for the stats.
 func (s *Store) UpdatePost(id string, fn func(p *Post) error) (Post, error) {
+	return s.updatePost(id, func(_ *sql.Tx, p *Post) error { return fn(p) })
+}
+
+// ReopenPost puts an ended post back up, unless its leader already has
+// maxActive open posts. It no longer counts as ended in the stats.
+func (s *Store) ReopenPost(id string, maxActive int, ttl time.Duration, now time.Time) (Post, error) {
+	return s.updatePost(id, func(tx *sql.Tx, p *Post) error {
+		var busy int
+		err := tx.QueryRow(`SELECT COUNT(*) FROM posts WHERE leader_id = ? AND status IN `+activeStatuses, p.LeaderID).Scan(&busy)
+		if err != nil {
+			return err
+		}
+		if busy >= maxActive && !p.Active() {
+			return ErrTooManyPosts
+		}
+		if err := p.Reopen(ttl, now); err != nil {
+			return err
+		}
+		_, err = tx.Exec(`DELETE FROM runs WHERE post_id = ?`, p.ID)
+		return err
+	})
+}
+
+func (s *Store) updatePost(id string, fn func(tx *sql.Tx, p *Post) error) (Post, error) {
 	var result Post
 	err := s.inTx(func(tx *sql.Tx) error {
 		cur, err := loadPost(tx, id)
@@ -369,7 +393,7 @@ func (s *Store) UpdatePost(id string, fn func(p *Post) error) (Post, error) {
 		}
 		result = cur.Clone()
 		next := cur.Clone()
-		if err := fn(&next); err != nil {
+		if err := fn(tx, &next); err != nil {
 			return err
 		}
 		next.Revision++

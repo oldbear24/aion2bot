@@ -17,6 +17,8 @@ import (
 func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, values []string) error {
 	userID, _ := interactionUser(i)
 	l := lang(i)
+	// The dungeon change carries the leader's pick after the post's ID.
+	postID, pick, _ := strings.Cut(postID, ":")
 	p, ok := b.store.Post(postID)
 	if !ok {
 		return b.reply(i, notice(colorClosed, errorText(lfg.ErrNotFound, l)))
@@ -56,6 +58,25 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 		return b.showModal(i, b.editModal(p, b.timeZone(userID, i.Locale), l))
 	case actPanel:
 		return b.update(i, b.managePanel(p, l))
+	case actReopen:
+		return b.onReopen(i, p)
+	case actMove, actMoveTo, actMoveMode:
+		if !p.Active() {
+			return b.update(i, b.managePanel(p, l))
+		}
+		dungeonID, modeID := p.DungeonID, p.ModeID
+		switch action {
+		case actMoveTo:
+			if dungeonID = first(values); dungeonID != p.DungeonID {
+				modeID = ""
+			}
+		case actMoveMode:
+			dungeonID, modeID = pick, first(values)
+		}
+		return b.update(i, b.movePanel(p, dungeonID, modeID, l))
+	case actMoveYes:
+		dungeonID, modeID, _ := strings.Cut(pick, ":")
+		return b.onMove(i, p, dungeonID, modeID)
 	case actDelete:
 		return b.update(i, b.confirmDelete(p, l))
 	case actDeleteYes:
@@ -330,6 +351,55 @@ func (b *Bot) announceChanges(before, after lfg.Post) {
 	})
 }
 
+// onReopen puts an ended post back up with everyone who was on it, if the
+// leader has room for another open run. The threads hear about it, without
+// pinging anyone.
+func (b *Bot) onReopen(i *discordgo.Interaction, p lfg.Post) error {
+	l := lang(i)
+	p, err := b.store.ReopenPost(p.ID, b.game.MaxRunsPerLeader, b.game.PostTTL(), time.Now())
+	switch {
+	case errors.Is(err, lfg.ErrTooManyPosts):
+		return b.reply(i, b.tooManyRuns(b.store.ActivePostsByLeader(p.LeaderID), l))
+	case errors.Is(err, lfg.ErrNotFound):
+		return b.update(i, notice(colorClosed, errorText(err, l)))
+	case err != nil:
+		// It was reopened meanwhile; show it as it is.
+		return b.update(i, b.managePanel(p, l))
+	}
+	b.scheduleSync(p.ID)
+	err = b.update(i, b.managePanel(p, l))
+	b.learnMembers(p, p.GuildIDs())
+	b.announce(p, nil, false, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+		return b.reopenNote(p, guildID, l)
+	})
+	return err
+}
+
+// onMove takes the post, with everyone on it, to another dungeon or mode.
+// The cards and the thread names follow, and the threads hear about it
+// without pinging anyone.
+func (b *Bot) onMove(i *discordgo.Interaction, before lfg.Post, dungeonID, modeID string) error {
+	// A dungeon with modes needs one of them; one without takes none.
+	to, ok := b.game.Dungeon(dungeonID)
+	if _, hasMode := to.Mode(modeID); !ok || !hasMode && (len(to.Modes) > 0 || modeID != "") {
+		return b.update(i, b.managePanel(before, lang(i)))
+	}
+	p, err := b.leaderChange(i, before.ID, func(p *lfg.Post) error {
+		fromSize := b.game.DungeonOrUnknown(p.DungeonID).PartySizeFor(p.ModeID)
+		return p.Move(to.ID, modeID, fromSize, to.PartySizeFor(modeID), to.MaxMissing(modeID, b.game.MaxMissing))
+	})
+	// Nothing moved: the party didn't fit, or the post is gone.
+	if p.ID == "" || p.DungeonID == before.DungeonID && p.ModeID == before.ModeID {
+		return err
+	}
+	go b.renameThreads(p)
+	b.learnMembers(p, p.GuildIDs())
+	b.announce(p, nil, false, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+		return b.moveNote(before, p, guildID, l)
+	})
+	return err
+}
+
 func (b *Bot) onKick(i *discordgo.Interaction, p lfg.Post, userIDs []string) error {
 	var removed []lfg.Removal
 	var promoted []lfg.Player
@@ -471,7 +541,7 @@ func (b *Bot) cmdDisable(i *discordgo.Interaction) error {
 }
 
 func manageRow(postID string, l i18n.Lang) discordgo.ActionsRow {
-	return discordgo.ActionsRow{Components: []discordgo.MessageComponent{manageButton(postID, l)}}
+	return discordgo.ActionsRow{Components: []discordgo.MessageComponent{manageButton(postID, false, l)}}
 }
 
 // playerLine is a player as the leader sees them: name, mention, role,

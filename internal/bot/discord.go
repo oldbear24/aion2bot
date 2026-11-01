@@ -10,7 +10,8 @@ import (
 
 // discordgo's response structs always serialize "content" and "embeds",
 // which Components V2 messages must not carry, so V2 payloads are sent
-// through these small structs instead.
+// through these small structs instead. Every V2 message swaps its emojis
+// for the bot's icons on the way out (see icons.go).
 
 type v2Message struct {
 	Components      []discordgo.MessageComponent      `json:"components"`
@@ -61,7 +62,7 @@ func (b *Bot) respond(i *discordgo.Interaction, typ discordgo.InteractionRespons
 // reply answers with a new message only the clicking user can see.
 func (b *Bot) reply(i *discordgo.Interaction, comps ...discordgo.MessageComponent) error {
 	return b.respond(i, discordgo.InteractionResponseChannelMessageWithSource, v2Message{
-		Components:      comps,
+		Components:      b.icons.apply(comps),
 		Flags:           discordgo.MessageFlagsEphemeral | discordgo.MessageFlagsIsComponentsV2,
 		AllowedMentions: noMentions,
 	})
@@ -70,7 +71,7 @@ func (b *Bot) reply(i *discordgo.Interaction, comps ...discordgo.MessageComponen
 // update replaces the message whose component was used.
 func (b *Bot) update(i *discordgo.Interaction, comps ...discordgo.MessageComponent) error {
 	return b.respond(i, discordgo.InteractionResponseUpdateMessage, v2Message{
-		Components:      comps,
+		Components:      b.icons.apply(comps),
 		Flags:           discordgo.MessageFlagsIsComponentsV2,
 		AllowedMentions: noMentions,
 	})
@@ -83,7 +84,7 @@ func (b *Bot) showModal(i *discordgo.Interaction, m modal) error {
 // editReply changes the bot's earlier reply to this interaction.
 func (b *Bot) editReply(i *discordgo.Interaction, comps ...discordgo.MessageComponent) error {
 	endpoint := discordgo.EndpointWebhookMessage(i.AppID, i.Token, "@original")
-	_, err := b.s.RequestWithBucketID("PATCH", endpoint, v2Message{Components: comps, AllowedMentions: noMentions}, endpoint)
+	_, err := b.s.RequestWithBucketID("PATCH", endpoint, v2Message{Components: b.icons.apply(comps), AllowedMentions: noMentions}, endpoint)
 	return err
 }
 
@@ -91,7 +92,7 @@ func (b *Bot) editReply(i *discordgo.Interaction, comps ...discordgo.MessageComp
 func (b *Bot) send(channelID string, comps []discordgo.MessageComponent, mentions *discordgo.MessageAllowedMentions) (string, error) {
 	endpoint := discordgo.EndpointChannelMessages(channelID)
 	body, err := b.s.RequestWithBucketID("POST", endpoint, v2Message{
-		Components:      comps,
+		Components:      b.icons.apply(comps),
 		Flags:           discordgo.MessageFlagsIsComponentsV2,
 		AllowedMentions: mentions,
 	}, endpoint)
@@ -128,7 +129,7 @@ func (b *Bot) startThread(channelID, messageID, name string) (string, error) {
 func (b *Bot) edit(channelID, messageID string, comps []discordgo.MessageComponent) error {
 	endpoint := discordgo.EndpointChannelMessage(channelID, messageID)
 	_, err := b.s.RequestWithBucketID("PATCH", endpoint, v2Message{
-		Components:      comps,
+		Components:      b.icons.apply(comps),
 		AllowedMentions: noMentions,
 	}, discordgo.EndpointChannelMessage(channelID, ""))
 	return err

@@ -89,6 +89,46 @@ func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note f
 	return reached
 }
 
+// startThreads starts the thread under copies of a post as they go up, so
+// every post has one from the start, and adds everyone on the post to
+// them. Without thread permissions on a server, its thread is started on
+// demand later, or its pings go by DM.
+func (b *Bot) startThreads(p lfg.Post, refs []lfg.MessageRef) {
+	var mu sync.Mutex
+	var started []lfg.MessageRef
+	forEach(refs, func(ref lfg.MessageRef) {
+		if _, _, err := b.thread(p, ref); err != nil {
+			if restCode(err) != discordgo.ErrCodeMissingPermissions {
+				log.Printf("start thread for post %s in guild %s: %v", p.ID, ref.GuildID, err)
+			}
+			return
+		}
+		ref.Thread = true
+		mu.Lock()
+		defer mu.Unlock()
+		started = append(started, ref)
+	})
+	b.addToThreads(started, p.People())
+}
+
+// renameThreads names the threads under a post after its dungeon and mode
+// again, reopening archived ones. Discord allows two renames per thread
+// in ten minutes and makes a third wait, so callers run this on its own.
+func (b *Bot) renameThreads(p lfg.Post) {
+	defer guard("renaming threads")
+	name, open := b.threadName(p), false
+	forEach(p.Messages, func(ref lfg.MessageRef) {
+		if !ref.Thread {
+			return
+		}
+		_, err := b.s.ChannelEditComplex(ref.MessageID, &discordgo.ChannelEdit{Name: name, Archived: &open})
+		// A thread a player started is theirs to name.
+		if err != nil && !isGone(err) && restCode(err) != discordgo.ErrCodeMissingPermissions {
+			log.Printf("rename thread %s of post %s: %v", ref.MessageID, p.ID, err)
+		}
+	})
+}
+
 // addToThreads adds people to the threads under a post's copies, on each
 // server they're a member of, so the thread shows up for them there too.
 // Adding someone who is already in a thread changes nothing.
