@@ -46,15 +46,15 @@ func (b *Bot) thread(p lfg.Post, ref lfg.MessageRef) (threadID string, started b
 	return threadID, true, nil
 }
 
-// announce posts a note in the thread under every copy of a post, written
-// by note in each server's language. With start set, missing threads are
+// announce posts a note in the thread under every copy of a post, made
+// by note in each server's language (see notes.go). With start set, missing threads are
 // started and everyone on the post is added to them; otherwise only the
 // existing threads get the note. pings maps a server to the users notified
 // there: each user's home server only, so nobody is pinged twice;
 // elsewhere their mention is just a link. It returns the servers the note
 // reached, so the caller can fall back to a DM. Callers run learnMembers
 // first, as note and the thread members depend on it.
-func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note func(guildID string, l i18n.Lang) string) map[string]bool {
+func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note func(guildID string, l i18n.Lang) discordgo.MessageComponent) map[string]bool {
 	langs := b.guildLangs()
 	var mu sync.Mutex
 	reached := map[string]bool{}
@@ -70,7 +70,7 @@ func (b *Bot) announce(p lfg.Post, pings map[string][]string, start bool, note f
 			if users := pings[ref.GuildID]; len(users) > 0 {
 				mentions = &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}, Users: users}
 			}
-			id, err = b.send(threadID, []discordgo.MessageComponent{text(note(ref.GuildID, langs.of(ref.GuildID)))}, mentions)
+			id, err = b.send(threadID, []discordgo.MessageComponent{note(ref.GuildID, langs.of(ref.GuildID))}, mentions)
 		}
 		if err != nil {
 			log.Printf("announce on post %s in guild %s: %v", p.ID, ref.GuildID, err)

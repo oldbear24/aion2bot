@@ -550,7 +550,7 @@ func TestJoinChoicesFollowRoles(t *testing.T) {
 		t.Errorf("tank: %v", got)
 	}
 	// A wanted class brings all its roles; a wanted role brings all its classes.
-	if got := labels("healer", "gladiator"); !slices.Equal(got, []string{"gladiator|tank", "cleric|healer", "chanter|healer", "gladiator|dps"}) {
+	if got := labels("healer", "gladiator"); !slices.Equal(got, []string{"gladiator|tank", "gladiator|dps", "cleric|healer", "chanter|healer"}) {
 		t.Errorf("healer + gladiator: %v", got)
 	}
 	if got := len(labels(config.AnyID)); got != 10 {
@@ -643,6 +643,48 @@ func TestLeaderIsInTheParty(t *testing.T) {
 	roster = b.rosterText(p, "", true, i18n.English)
 	if want := " <:leader:1234567890123456789> **Lea**"; !strings.Contains(roster, want) || strings.Contains(roster, "👑") {
 		t.Errorf("roster misses %q:\n%s", want, roster)
+	}
+}
+
+func TestPartyIsSortedByRole(t *testing.T) {
+	b := testBot(t)
+	pl := func(id, class, role string) lfg.Player {
+		return lfg.Player{UserID: id, Name: "N" + id, ClassID: class, RoleID: role}
+	}
+	p := lfg.Post{LeaderID: "lead", LeaderName: "Nlead", LeaderClass: "sorcerer", LeaderRole: "dps", Status: lfg.StatusOpen, Missing: 1,
+		Accepted: []lfg.Player{pl("heal", "cleric", "healer"), pl("chant", "chanter", "healer"), pl("dps", "ranger", "dps"),
+			pl("tank1", "templar", "tank"), pl("tank2", "gladiator", "tank")}}
+	ids := func() []string {
+		var out []string
+		for _, m := range b.partyByRole(p) {
+			out = append(out, m.UserID)
+		}
+		return out
+	}
+	// Tanks, then DPS, then healers. The Chanter heals next to a Cleric, so
+	// it shows and sorts as DPS; the leader leads their role, and the others
+	// keep the order they were accepted in.
+	want := []string{"tank1", "tank2", "lead", "chant", "dps", "heal"}
+	if got := ids(); !slices.Equal(got, want) {
+		t.Errorf("party %v, want %v", got, want)
+	}
+	roster := b.rosterText(p, "", true, i18n.English)
+	last := -1
+	for _, id := range want {
+		at := strings.Index(roster, "<@"+id+">")
+		if at < last {
+			t.Errorf("roster lists %s out of order:\n%s", id, roster)
+		}
+		last = at
+	}
+	if p.Accepted[0].UserID != "heal" {
+		t.Error("sorting the party changed the accepted players")
+	}
+
+	// A leader without a role leads the party.
+	p.LeaderClass, p.LeaderRole = "", ""
+	if got := ids(); got[0] != "lead" || !slices.Equal(got[1:], []string{"tank1", "tank2", "chant", "dps", "heal"}) {
+		t.Errorf("party with a roleless leader %v", got)
 	}
 }
 

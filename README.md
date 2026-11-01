@@ -17,10 +17,10 @@ It uses Discord's new components:
    admins of the other servers run `/lfg-network join code:K7M2QX9P`. A server that isn't linked only sees its own posts.
 3. **Post a run.** A leader runs `/lfg` and gets a private panel:
    - **Dungeon or raid**, then **Difficulty**: only that dungeon's own modes, e.g. Exploration / Conquest / Conquest [Hard].
-   - **Looking for**: roles (🟦 Tank, 🟩 Healer, 🟥 DPS), specific classes, *Any class*, or a mix.
+   - **Looking for**: roles (🟦 Tank, 🟥 DPS, 🟩 Healer), specific classes, *Any class*, or a mix.
    - **Missing players**: limited by the mode's party size.
-   - **You play**: the leader's role and class, filled in from `/profile`. The leader is listed first in the party on the post,
-     with their profile's character name and GS.
+   - **You play**: the leader's role and class, filled in from `/profile`. The leader is listed in the party on the post,
+     with their profile's character name and GS. The party is sorted by role: tanks, then DPS, then healers (the order of `roles` in `game.json`).
    - **Gear score, time & note** (all optional). The game's GS requirement for the mode is shown as a hint.
      The start is typed like `21.09.2026 10:15`, `21.9. 10:15` or just `10:15` (the next 10:15), in the leader's time zone.
      On the post it becomes a Discord timestamp, so every player sees it in their own local time with a countdown.
@@ -41,7 +41,8 @@ It uses Discord's new components:
    adjust the missing count when someone joins outside the bot, **Close** the post, or **Delete** it from every server right away.
    A changed start moves the expiry with it, and the threads get a note of what changed.
 7. **Threads.** Each copy of a post gets a thread on its server, started when the first player joins, and the bot keeps them alike:
-   - Its notes go to every thread, in each server's language. Everyone is pinged **once** per run, on the server they posted or joined from:
+   - Its notes go to every thread, in each server's language, as small cards like the post: a heading, who it's for, then the details
+     (the player who joined with a ⚙️ **Manage** button, the role and start for an accepted player, the party by role in the reminder). Everyone is pinged **once** per run, on the server they posted or joined from:
      the leader when the first player joins, each player when they're accepted (or move up from the reserves). After that, changes only edit the card, which never notifies anyone.
    - The one exception is the **reminder** `reminder_minutes` before a planned start: the leader and the players accepted by then are pinged once more.
      Players accepted later were told the start already, and anyone can turn reminders off in `/profile`.
@@ -146,8 +147,8 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
         // a mode can set its own "party_size" if it differs from the dungeon's
       ] }
   ],
-  "roles": [                  // roles leaders can look for; the emoji marks players on the post
-    { "id": "tank", "name": "Tank", "emoji": "🟦" }
+  "roles": [                  // roles leaders can look for; the emoji marks players on the post,
+    { "id": "tank", "name": "Tank", "emoji": "🟦" }    // whose party is sorted in this order
   ],
   "classes": [                // "Any class" is added automatically
     { "id": "gladiator", "name": "Gladiator", "emoji": "⚔️", "roles": ["tank", "dps"] },

@@ -145,13 +145,8 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	// rest. Everyone who joins is added to the threads.
 	b.learnMembers(p, p.GuildIDs())
 	if pingLeader {
-		key := "ping.leader"
-		if reserve {
-			key = "ping.leader_reserve"
-		}
-		note := func(guildID string, l i18n.Lang) string {
-			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
-			return l.T(key, leader, b.applicantText(p, pl, guildID, l), dungeon.Name)
+		note := func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+			return b.joinNote(p, pl, reserve, guildID, l)
 		}
 		if !b.announce(p, map[string][]string{p.GuildID: {p.LeaderID}}, true, note)[p.GuildID] {
 			ll := b.guildLang(p.GuildID)
@@ -163,15 +158,6 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 		b.addToThreads(p.Messages, []lfg.Player{pl})
 	}
 	return err
-}
-
-// applicantText describes a player as seen on one server's copy of a post.
-func (b *Bot) applicantText(p lfg.Post, pl lfg.Player, viewerGuildID string, l i18n.Lang) string {
-	s := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID)) + charSuffix(pl.Char) + " (" + b.bringing(p, pl)
-	if pl.GS > 0 {
-		s += " · GS " + l.GS(pl.GS)
-	}
-	return s + ")"
 }
 
 func (b *Bot) onLeave(i *discordgo.Interaction, p lfg.Post, userID string) error {
@@ -244,17 +230,15 @@ func (b *Bot) welcome(p lfg.Post, players []lfg.Player, promoted bool) {
 	if len(players) == 0 {
 		return
 	}
-	key, dmKey := "ping.accepted", "dm.accepted"
+	dmKey := "dm.accepted"
 	if promoted {
-		key, dmKey = "ping.promoted", "dm.promoted"
+		dmKey = "dm.promoted"
 	}
 	where := b.runName(p)
 	b.learnMembers(p, p.GuildIDs())
 	for _, pl := range players {
-		note := func(guildID string, l i18n.Lang) string {
-			player := who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, guildID))
-			leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))
-			return l.T(key, player, leader, where, b.bringing(p, pl), startText(p.StartAt, p.Start, l)) + leaderCharLine(p, l)
+		note := func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+			return b.welcomeNote(p, pl, promoted, guildID, l)
 		}
 		if !b.announce(p, map[string][]string{pl.GuildID: {pl.UserID}}, true, note)[pl.GuildID] {
 			pll := b.guildLang(pl.GuildID)
@@ -279,8 +263,8 @@ func (b *Bot) runName(p lfg.Post) string {
 	return s
 }
 
-// leaderCharLine tells accepted players whom to ask for the invite in
-// game, when the leader saved their character name.
+// leaderCharLine tells players who got a DM whom to ask for the invite
+// in game, when the leader saved their character name.
 func leaderCharLine(p lfg.Post, l i18n.Lang) string {
 	if p.LeaderChar == "" {
 		return ""
@@ -337,28 +321,12 @@ func (b *Bot) onEditSubmit(i *discordgo.Interaction, postID string) error {
 // announceChanges tells the existing threads what the leader changed,
 // without pinging anyone.
 func (b *Bot) announceChanges(before, after lfg.Post) {
-	startChanged := !before.StartAt.Equal(after.StartAt)
-	if !startChanged && before.MinGS == after.MinGS && before.Note == after.Note {
+	if before.StartAt.Equal(after.StartAt) && before.MinGS == after.MinGS && before.Note == after.Note {
 		return
 	}
 	b.learnMembers(after, after.GuildIDs())
-	b.announce(after, nil, false, func(guildID string, l i18n.Lang) string {
-		leader := who(after.LeaderID, after.LeaderName, b.mentionable(after.LeaderID, after.GuildID, guildID))
-		lines := []string{l.T("thread.edited", leader)}
-		if startChanged {
-			lines = append(lines, l.T("card.start")+startText(after.StartAt, "", l))
-		}
-		if before.MinGS != after.MinGS {
-			gs := l.T("thread.gs_none")
-			if after.MinGS > 0 {
-				gs = l.GS(after.MinGS) + "+"
-			}
-			lines = append(lines, l.T("thread.gs", gs))
-		}
-		if before.Note != after.Note {
-			lines = append(lines, l.T("thread.note", orDefault(escape(after.Note), l.T("draft.no_note"))))
-		}
-		return strings.Join(lines, "\n")
+	b.announce(after, nil, false, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+		return b.changesNote(before, after, guildID, l)
 	})
 }
 
@@ -503,10 +471,7 @@ func (b *Bot) cmdDisable(i *discordgo.Interaction) error {
 }
 
 func manageRow(postID string, l i18n.Lang) discordgo.ActionsRow {
-	return discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-		discordgo.Button{CustomID: customID(actManage, postID), Label: l.T("card.manage"), Style: discordgo.PrimaryButton,
-			Emoji: emoji("⚙️")},
-	}}
+	return discordgo.ActionsRow{Components: []discordgo.MessageComponent{manageButton(postID, l)}}
 }
 
 // playerLine is a player as the leader sees them: name, mention, role,

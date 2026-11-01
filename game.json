@@ -69,8 +69,8 @@
   ],
   "roles": [
     { "id": "tank", "name": "Tank", "emoji": "🟦" },
-    { "id": "healer", "name": "Healer", "emoji": "🟩" },
-    { "id": "dps", "name": "DPS", "emoji": "🟥" }
+    { "id": "dps", "name": "DPS", "emoji": "🟥" },
+    { "id": "healer", "name": "Healer", "emoji": "🟩" }
   ],
   "classes": [
     { "id": "gladiator", "name": "Gladiator", "emoji": "⚔️", "roles": ["tank", "dps"] },

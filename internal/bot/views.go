@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"cmp"
 	"regexp"
 	"slices"
 	"strconv"
@@ -104,7 +105,6 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	}
 	header += "\n" + status
 
-	// The leader heads the party in the roster.
 	info := l.T("card.start") + startText(p.StartAt, p.Start, l)
 
 	var body []discordgo.MessageComponent
@@ -180,55 +180,18 @@ func partyFill(d config.Dungeon, p lfg.Post) string {
 	return " (" + strconv.Itoa(max(1, size-p.Missing)) + "/" + strconv.Itoa(size) + ")"
 }
 
-// rosterText lists the party, led by the leader, then the applicants and
-// the reserves, each marked with the colour of their role, as seen on
-// viewerGuildID's copy of the post. The leader's private panel passes
-// leaderView to link every player. Players who don't fit in rosterBudget
-// are counted instead.
+// rosterText lists the party, by role, then the applicants and the
+// reserves in the order they joined, each marked with the colour of their
+// role, as seen on viewerGuildID's copy of the post. The leader's private
+// panel passes leaderView to link every player. Players who don't fit in
+// rosterBudget are counted instead.
 func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i18n.Lang) string {
-	line := func(pl lfg.Player) string {
-		s := b.roleBullet(b.shownRole(p, pl)) + " "
-		if pl.UserID == p.LeaderID {
-			// The crown stands in for the bullet of a leader without a role.
-			s = strings.TrimPrefix(s, "• ") + b.game.LeaderEmoji + " "
-		}
-		if leaderView {
-			s += "**" + escape(pl.Name) + "** <@" + pl.UserID + ">"
-		} else {
-			s += who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID))
-		}
-		s += charSuffix(pl.Char)
-		// Only a leader who didn't pick a class has none.
-		if pl.ClassID != "" {
-			c := b.game.ClassOrUnknown(pl.ClassID)
-			s += " — " + strings.TrimSpace(c.Emoji+" "+c.Name)
-		}
-		if pl.GS > 0 {
-			s += " · GS " + l.GS(pl.GS)
-		}
-		if pl.GuildName != "" && pl.GuildID != viewerGuildID {
-			s += " · *" + escape(truncate(pl.GuildName, 32)) + "*"
-		}
-		return s
-	}
 	room := rosterBudget
 	list := func(players []lfg.Player) string {
-		var sb strings.Builder
-		for n, pl := range players {
-			s := "\n" + line(pl)
-			if size := utf8.RuneCountInString(s); size <= room {
-				room -= size
-				sb.WriteString(s)
-				continue
-			}
-			room = 0
-			sb.WriteString(l.T("roster.more", len(players)-n))
-			break
-		}
-		return sb.String()
+		return playerList(players, func(pl lfg.Player) string { return b.memberLine(p, pl, viewerGuildID, leaderView, l) }, &room, l)
 	}
 
-	party := p.Party()
+	party := b.partyByRole(p)
 	var sb strings.Builder
 	sb.WriteString(l.T("roster.in_party", len(party)) + list(party) + "\n")
 	if len(p.Applicants) > 0 {
@@ -240,6 +203,69 @@ func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i1
 		sb.WriteString(l.T("roster.reserves", len(p.Reserves)) + list(p.Reserves))
 	}
 	return strings.TrimSpace(sb.String())
+}
+
+// memberLine is one player on a post, as seen on viewerGuildID's copy:
+// the colour of their role, their name, character, class, gear score and
+// home server. The leader wears the crown, which stands in for the colour
+// when they didn't pick a role. leaderView links every player.
+func (b *Bot) memberLine(p lfg.Post, pl lfg.Player, viewerGuildID string, leaderView bool, l i18n.Lang) string {
+	s := b.roleBullet(b.shownRole(p, pl)) + " "
+	if pl.UserID == p.LeaderID {
+		s = strings.TrimPrefix(s, "• ") + b.game.LeaderEmoji + " "
+	}
+	if leaderView {
+		s += "**" + escape(pl.Name) + "** <@" + pl.UserID + ">"
+	} else {
+		s += who(pl.UserID, pl.Name, b.mentionable(pl.UserID, pl.GuildID, viewerGuildID))
+	}
+	s += charSuffix(pl.Char)
+	// Only a leader who didn't pick a class has none.
+	if pl.ClassID != "" {
+		c := b.game.ClassOrUnknown(pl.ClassID)
+		s += " — " + strings.TrimSpace(c.Emoji+" "+c.Name)
+	}
+	if pl.GS > 0 {
+		s += " · GS " + l.GS(pl.GS)
+	}
+	if pl.GuildName != "" && pl.GuildID != viewerGuildID {
+		s += " · *" + escape(truncate(pl.GuildName, 32)) + "*"
+	}
+	return s
+}
+
+// playerList writes one line per player while they fit in room
+// characters, which it uses up, and counts the rest.
+func playerList(players []lfg.Player, line func(lfg.Player) string, room *int, l i18n.Lang) string {
+	var sb strings.Builder
+	for n, pl := range players {
+		s := "\n" + line(pl)
+		if size := utf8.RuneCountInString(s); size <= *room {
+			*room -= size
+			sb.WriteString(s)
+			continue
+		}
+		*room = 0
+		sb.WriteString(l.T("roster.more", len(players)-n))
+		break
+	}
+	return sb.String()
+}
+
+// partyByRole is the party in the order of the roles in game.json, by the
+// role each player shows as: tanks, then DPS, then healers. A leader who
+// didn't pick a role comes first. Players with the same role keep their
+// order, so the leader leads their role and the others follow in the
+// order they were accepted.
+func (b *Bot) partyByRole(p lfg.Post) []lfg.Player {
+	party := p.Party()
+	rank := make(map[string]int, len(party))
+	for _, pl := range party {
+		role := b.shownRole(p, pl)
+		rank[pl.UserID] = slices.IndexFunc(b.game.Roles, func(r config.Role) bool { return r.ID == role })
+	}
+	slices.SortStableFunc(party, func(a, c lfg.Player) int { return cmp.Compare(rank[a.UserID], rank[c.UserID]) })
+	return party
 }
 
 // draftPanel is the private /lfg form. The difficulty menu only appears
