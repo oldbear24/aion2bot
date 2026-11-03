@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -207,7 +208,8 @@ func Open(path string) (*Store, error) {
 
 // migrations upgrade databases made by earlier versions, in order. The
 // database's user_version counts how many have run; new databases get
-// the base schema and then every migration.
+// the base schema and then every migration. New ones go at the end: a
+// database runs only what comes after its count.
 var migrations = []string{
 	`ALTER TABLE guilds ADD COLUMN lang TEXT NOT NULL DEFAULT 'en'`,
 	`ALTER TABLE posts ADD COLUMN start_at INTEGER NOT NULL DEFAULT 0`,
@@ -238,17 +240,38 @@ var migrations = []string{
 	`ALTER TABLE profiles ADD COLUMN server TEXT NOT NULL DEFAULT ''`,
 }
 
+var addColumn = regexp.MustCompile(`^ALTER TABLE (\w+) ADD COLUMN (\w+) `)
+
+// migrate runs what comes after the database's count, and adds any column it
+// doesn't have, whatever its count says. v1.8.0 put posts.rally among the
+// migrations already released, so databases past that point never got it.
 func migrate(db *sql.DB) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	for ; version < len(migrations); version++ {
-		if _, err := db.Exec(migrations[version]); err != nil {
-			return fmt.Errorf("migration %d: %w", version+1, err)
+	for n, m := range migrations {
+		run := n >= version
+		if add := addColumn.FindStringSubmatch(m); add != nil {
+			var found int
+			err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, add[1], add[2]).Scan(&found)
+			if err != nil {
+				return fmt.Errorf("migration %d: %w", n+1, err)
+			}
+			run = found == 0
+			if run && n < version {
+				log.Printf("store: adding the column %s.%s that an earlier upgrade skipped", add[1], add[2])
+			}
 		}
-		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, version+1)); err != nil {
-			return err
+		if run {
+			if _, err := db.Exec(m); err != nil {
+				return fmt.Errorf("migration %d: %w", n+1, err)
+			}
+		}
+		if n >= version {
+			if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, n+1)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
