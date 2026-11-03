@@ -143,6 +143,16 @@ func (b *Bot) reopenNote(p lfg.Post, guildID string, l i18n.Lang) discordgo.Mess
 	)
 }
 
+// restoredNote tells the threads the post is back after the bot lost it, and
+// who has to join again. They go by name, as the bot can't tell who they are.
+func (b *Bot) restoredNote(p lfg.Post, left []string, l i18n.Lang) discordgo.MessageComponent {
+	return container(statusColor(p.Status),
+		text(l.T("thread.reopened_title")+"\n"+l.T("thread.restored")),
+		divider(),
+		text(b.statusLine(p, l)+rejoinLine(left, l)),
+	)
+}
+
 // handOverNote tells the threads a party member took over the post, and
 // the new leader, who is pinged with it, how to manage it. byGuild is the
 // server whose moderators handed it over, or empty for the old leader.

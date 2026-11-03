@@ -20,16 +20,22 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 	l := lang(i)
 	// The dungeon change carries the leader's pick after the post's ID.
 	postID, pick, _ := strings.Cut(postID, ":")
-	p, ok := b.store.Post(postID)
-	if !ok {
-		return b.reply(i, notice(colorClosed, errorText(lfg.ErrNotFound, l)))
+	p, err := b.store.LoadPost(postID)
+	switch {
+	case errors.Is(err, lfg.ErrNotFound):
+		return b.onPostGone(i, action, postID)
+	case err != nil:
+		return b.reply(i, notice(colorClosed, errorText(err, l)))
 	}
+	p = b.adoptCard(i, p)
 
 	switch action {
 	case actJoin:
 		return b.onJoin(i, p, userID)
 	case actLeave:
 		return b.onLeave(i, p, userID)
+	case actRestore:
+		return b.reply(i, notice(colorOpen, l.T("restore.already")))
 	}
 
 	// Everything else belongs to the leader, except what moderators may do
@@ -127,6 +133,28 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 			b.tellLeader(p, i.GuildID, "dm.mod_deleted")
 		}
 		return b.editReply(i, notice(colorClosed, msg))
+	}
+	return nil
+}
+
+// onPostGone answers a click on a post that no longer exists. Its card can
+// still be up, looking open: the post ended while the bot couldn't reach the
+// card, or the database was replaced. Nothing else will ever change such a
+// card, so the click retires it for everyone, leaving the button that puts
+// the post back (see restore.go). Elsewhere, the clicker just hears that the
+// post is gone.
+func (b *Bot) onPostGone(i *discordgo.Interaction, action, postID string) error {
+	if action == actRestore {
+		return b.onRestore(i, postID)
+	}
+	l := lang(i)
+	if i.Message == nil || !b.retireCard(i.Message.Components, postID, b.guildLang(i.GuildID)) {
+		return b.reply(i, notice(colorClosed, errorText(lfg.ErrNotFound, l)))
+	}
+	log.Printf("post %s is gone, but its card %s was still up in guild %s", postID, i.Message.ID, i.GuildID)
+	if err := b.update(i, i.Message.Components...); err != nil {
+		log.Printf("retire the card of post %s: %v", postID, err)
+		return b.reply(i, notice(colorClosed, errorText(lfg.ErrNotFound, l)))
 	}
 	return nil
 }

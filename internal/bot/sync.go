@@ -65,12 +65,26 @@ func (b *Bot) syncPost(postID string) {
 	forEach(p.Messages, func(ref lfg.MessageRef) {
 		err := b.edit(ref.ChannelID, ref.MessageID, b.postCard(p, ref.GuildID, ref.PingRoleID, langs.of(ref.GuildID)))
 		switch {
-		case isGone(err):
+		case b.cardLost(err, ref.GuildID):
+			log.Printf("forget the card of post %s in guild %s: %v", postID, ref.GuildID, err)
 			b.store.RemoveMessage(postID, ref.MessageID)
 		case err != nil:
 			log.Printf("update post %s in guild %s: %v", postID, ref.GuildID, err)
 		}
 	})
+}
+
+// cardLost reports whether a card that couldn't be edited is lost for good:
+// it or its channel no longer exists, or the bot is off the server. Missing
+// Access alone doesn't say so, as the bot also gets it while a channel's
+// permissions keep it out, and a card it forgets is never updated or deleted
+// again.
+func (b *Bot) cardLost(err error, guildID string) bool {
+	if restCode(err) == discordgo.ErrCodeMissingAccess {
+		_, notOnServer := b.s.State.Guild(guildID)
+		return notOnServer != nil
+	}
+	return isGone(err)
 }
 
 // broadcast sends a post to every given server that doesn't have it yet and
@@ -229,6 +243,12 @@ func (b *Bot) deleteMessages(postID string, msgs []lfg.MessageRef) int {
 			return
 		}
 		err := b.s.ChannelMessageDelete(m.ChannelID, m.MessageID)
+		// Out of the channel, the bot can't take the message down, and retrying
+		// could hold up the cleanup for good. A click retires a card left behind
+		// this way (see onPostGone).
+		if restCode(err) == discordgo.ErrCodeMissingAccess {
+			log.Printf("leave message %s of post %s behind: %v", m.MessageID, postID, err)
+		}
 		// A ping in a thread that a moderator locked stays out of sight.
 		if err != nil && !isGone(err) && restCode(err) != discordgo.ErrCodePerformedOperationOnArchivedThread {
 			log.Printf("delete message %s of post %s: %v", m.MessageID, postID, err)

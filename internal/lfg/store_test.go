@@ -21,6 +21,76 @@ func openTestStore(t *testing.T) (*Store, string) {
 	return s, path
 }
 
+func TestLoadPostTellsGoneFromUnreadable(t *testing.T) {
+	s, _ := openTestStore(t)
+	p, err := s.CreatePost(newPost(1), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.LoadPost(p.ID); err != nil || got.ID != p.ID {
+		t.Errorf("stored post: %+v, %v", got, err)
+	}
+	if _, err := s.LoadPost("nope"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing post: %v", err)
+	}
+	if _, ok := s.Post("nope"); ok {
+		t.Error("Post found a missing post")
+	}
+	s.Close()
+	if _, err := s.LoadPost(p.ID); err == nil || errors.Is(err, ErrNotFound) {
+		t.Errorf("a closed database says %v, not that it can't read", err)
+	}
+	if _, ok := s.Post(p.ID); ok {
+		t.Error("Post read from a closed database")
+	}
+}
+
+func TestRestorePost(t *testing.T) {
+	s, _ := openTestStore(t)
+	card := MessageRef{GuildID: "g1", ChannelID: "c1", MessageID: "m1", PingRoleID: "r1"}
+	lost := newPost(1)
+	lost.ID = "lost01"
+	lost.Accepted = []Player{{UserID: "a", Name: "Ann", ClassID: "cleric", RoleID: "healer", GuildID: "g1"}}
+
+	got, ended, err := s.RestorePost(lost, card, 2)
+	if err != nil || ended {
+		t.Fatalf("a post that never ended: ended %v, %v", ended, err)
+	}
+	if got.ID != "lost01" || len(got.Accepted) != 1 || len(got.Messages) != 1 || got.Messages[0] != card {
+		t.Errorf("stored post: %+v", got)
+	}
+	if stored, ok := s.Post("lost01"); !ok || stored.Messages[0].PingRoleID != "r1" {
+		t.Errorf("post not stored: %+v", stored)
+	}
+
+	// It can't overwrite a post that exists.
+	if _, _, err := s.RestorePost(lost, card, 2); !errors.Is(err, ErrStillOpen) {
+		t.Errorf("post that exists: %v", err)
+	}
+
+	// The leader's open posts count, as for any new post.
+	other := lost
+	other.ID = "lost02"
+	if _, _, err := s.RestorePost(other, MessageRef{GuildID: "g1", ChannelID: "c1", MessageID: "m2"}, 1); !errors.Is(err, ErrTooManyPosts) {
+		t.Errorf("one post too many: %v", err)
+	}
+
+	// A post that ended was counted as a run, and no longer is once it's back.
+	if _, err := s.UpdatePost("lost01", func(p *Post) error { return p.Close(StatusClosed, time.Now()) }); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.Runs([]string{lost.GuildID}, time.Time{})); n != 1 {
+		t.Fatalf("%d runs before", n)
+	}
+	s.DeletePost("lost01")
+	if _, ended, err := s.RestorePost(lost, card, 2); err != nil || !ended {
+		t.Errorf("a post that ended: ended %v, %v", ended, err)
+	}
+	if runs := s.Runs([]string{lost.GuildID}, time.Time{}); len(runs) != 1 || runs[0].Status != StatusOpen {
+		t.Errorf("runs after: %+v", runs)
+	}
+}
+
 func TestStorePostsRoundTrip(t *testing.T) {
 	s, path := openTestStore(t)
 	if err := s.SetGuild(GuildConfig{GuildID: "g1", GuildName: "One", ChannelID: "c1"}); err != nil {

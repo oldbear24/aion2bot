@@ -314,14 +314,21 @@ func (s *Store) Guilds() []GuildConfig {
 }
 
 func (s *Store) Post(id string) (Post, bool) {
+	p, err := s.LoadPost(id)
+	return p, err == nil
+}
+
+// LoadPost is Post for callers that act on a post being gone: ErrNotFound
+// says it is, and any other error only that it can't be read now.
+func (s *Store) LoadPost(id string) (Post, error) {
 	p, err := loadPost(s.db, id)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
 			log.Printf("store: load post %s: %v", id, err)
 		}
-		return Post{}, false
+		return Post{}, err
 	}
-	return *p, true
+	return *p, nil
 }
 
 func (s *Store) ActivePostsByLeader(userID string) []Post {
@@ -417,6 +424,54 @@ func (s *Store) ReopenPost(id string, maxActive int, ttl time.Duration, now time
 		_, err = tx.Exec(`DELETE FROM runs WHERE post_id = ?`, p.ID)
 		return err
 	})
+}
+
+// RestorePost puts a post the bot lost back under its old ID, with the card
+// it was read from, unless it exists after all (ErrStillOpen) or its leader
+// already has maxActive open posts. It reports whether the post had ended,
+// which no longer counts in the stats.
+func (s *Store) RestorePost(p Post, card MessageRef, maxActive int) (Post, bool, error) {
+	var stored *Post
+	ended := false
+	err := s.inTx(func(tx *sql.Tx) error {
+		var taken, busy int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM posts WHERE id = ?`, p.ID).Scan(&taken); err != nil {
+			return err
+		}
+		if taken > 0 {
+			return ErrStillOpen
+		}
+		err := tx.QueryRow(`SELECT COUNT(*) FROM posts WHERE leader_id = ? AND status IN `+activeStatuses, p.LeaderID).Scan(&busy)
+		if err != nil {
+			return err
+		}
+		if busy >= maxActive {
+			return ErrTooManyPosts
+		}
+		res, err := tx.Exec(`DELETE FROM runs WHERE post_id = ?`, p.ID)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		ended = n > 0
+		if err := writePost(tx, &p); err != nil {
+			return err
+		}
+		_, err = tx.Exec(`INSERT OR REPLACE INTO messages (message_id, post_id, guild_id, channel_id, ping_role_id)
+			VALUES (?, ?, ?, ?, ?)`, card.MessageID, p.ID, card.GuildID, card.ChannelID, card.PingRoleID)
+		if err != nil {
+			return err
+		}
+		stored, err = loadPost(tx, p.ID)
+		return err
+	})
+	if err != nil {
+		return Post{}, false, err
+	}
+	return *stored, ended, nil
 }
 
 // HandOverPost runs fn, which hands a post over to userID (see

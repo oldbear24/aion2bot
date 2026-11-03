@@ -51,6 +51,8 @@ const (
 	actMoveYes   = "moveyes"
 	actSize      = "size"
 	actLooking   = "looking"
+	// The button on a card whose post the bot lost.
+	actRestore = "restore"
 	// The handover carries the new leader after the post's ID, and on the
 	// confirm buttons whether the old one stays: ":<userID>:stay".
 	actHandTo  = "handto"
@@ -174,6 +176,55 @@ func (b *Bot) postCard(p lfg.Post, guildID, pingRoleID string, l i18n.Lang) []di
 	return append(out, container(statusColor(p.Status), body...))
 }
 
+// findCard finds a post's card among a message's components, as Discord sent
+// them: its container, and where in it the row with the buttons is. It reports
+// false for any other message; only the card has the join button.
+func findCard(comps []discordgo.MessageComponent, postID string) (*discordgo.Container, int, bool) {
+	isJoin := func(c discordgo.MessageComponent) bool {
+		button, ok := c.(*discordgo.Button)
+		return ok && button.CustomID == customID(actJoin, postID)
+	}
+	for _, c := range comps {
+		box, ok := c.(*discordgo.Container)
+		if !ok {
+			continue
+		}
+		for n, part := range box.Components {
+			if row, ok := part.(*discordgo.ActionsRow); ok && slices.ContainsFunc(row.Components, isJoin) {
+				return box, n, true
+			}
+		}
+	}
+	return nil, 0, false
+}
+
+// retireCard changes a card its post left behind, given as Discord sent it,
+// to show the post is gone: grey, with Join and Leave off, Manage swapped for
+// the button that puts the post back, and a last line saying so instead of the
+// footer. The party list stays, as the post is rebuilt from it. It reports
+// false for any other message.
+func (b *Bot) retireCard(comps []discordgo.MessageComponent, postID string, l i18n.Lang) bool {
+	box, row, ok := findCard(comps, postID)
+	if !ok {
+		return false
+	}
+	for _, c := range box.Components[row].(*discordgo.ActionsRow).Components {
+		button, ok := c.(*discordgo.Button)
+		switch {
+		case !ok:
+		case button.CustomID == customID(actManage, postID):
+			*button = discordgo.Button{CustomID: customID(actRestore, postID), Label: l.T("manage.reopen"),
+				Style: discordgo.SuccessButton, Emoji: b.icons.emoji(emoji("🔓"))}
+		case button.CustomID != customID(actRestore, postID):
+			button.Disabled = true
+		}
+	}
+	color := colorClosed
+	box.AccentColor = &color
+	box.Components = append(box.Components[:row+1], text(l.T("card.gone", postID)))
+	return true
+}
+
 // statusLine is how the party stands, as the card shows it: "Looking for
 // 2 more (3/5) — 🟦 Tank", full, closed or expired.
 func (b *Bot) statusLine(p lfg.Post, l i18n.Lang) string {
@@ -279,10 +330,13 @@ func (b *Bot) memberLine(p lfg.Post, pl lfg.Player, viewerGuildID string, leader
 		s += " · GS " + l.GS(pl.GS)
 	}
 	if pl.GuildName != "" && pl.GuildID != viewerGuildID {
-		s += " · *" + escape(truncate(pl.GuildName, 32)) + "*"
+		s += " · *" + escape(truncate(pl.GuildName, guildTagLength)) + "*"
 	}
 	return s
 }
+
+// guildTagLength is how much of a player's home server the roster shows.
+const guildTagLength = 32
 
 // playerList writes one line per player while they fit in room
 // characters, which it uses up, and counts the rest.
@@ -1025,8 +1079,14 @@ const zeroWidthSpace = string(rune(0x200B))
 var markdownChars = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "~", `\~`, "`", "\\`", "|", `\|`, ">", `\>`, "#", `\#`,
 	"@", "@"+zeroWidthSpace)
 
+var markdownEscapes = strings.NewReplacer(`\\`, `\`, `\*`, "*", `\_`, "_", `\~`, "~", "\\`", "`", `\|`, "|", `\>`, ">", `\#`, "#",
+	"@"+zeroWidthSpace, "@")
+
 // escape keeps user-written text from breaking the layout or pinging anyone.
 func escape(s string) string { return markdownChars.Replace(s) }
+
+// unescape reads back what escape wrote.
+func unescape(s string) string { return markdownEscapes.Replace(s) }
 
 func quote(s string) string { return "> " + strings.ReplaceAll(s, "\n", "\n> ") }
 

@@ -155,8 +155,8 @@ func restCode(err error) int {
 	return 0
 }
 
-// isGone reports whether a message or channel can no longer be reached,
-// so the copy of the post should be forgotten.
+// isGone reports whether a message or channel can't be reached, so there is
+// no point in trying again. See cardLost for whether a card is lost for good.
 func isGone(err error) bool {
 	switch restCode(err) {
 	case discordgo.ErrCodeUnknownMessage, discordgo.ErrCodeUnknownChannel, discordgo.ErrCodeMissingAccess:

@@ -94,6 +94,11 @@ It uses Discord's new components:
      and the block applies on every linked server.
    - `/lfg-blocks` lists the server's blocks (and the network's, on the owner server) and lifts them.
 9. **Cleanup.** Posts expire after `post_ttl_hours`. A closed or expired post is deleted from every server, with the thread under it, 24 hours after it ended.
+   - **A lost post comes back from its card.** A card can outlive its post when the bot was kept out of its channel, or its database was replaced. The first click on it turns it grey for everyone,
+     with **Reopen** in place of **Manage**. Its leader, or a moderator of the server the post came from, can then put the post back under its old ID, with what the card shows.
+     Players the card links are back right away. Those it only names are looked for by exactly that name on the server it shows them from; whoever can't be found has to join again, is named in the thread, and leaves their place open.
+     A post that had ended goes up on the linked servers again. After a replaced database, the other servers' cards are still there, and follow it again once someone clicks them.
+     Clicking a forgotten card of a post the bot still has also makes the card follow its post again.
    The bot can delete threads it started; if Discord ever refuses, it deletes its pings and archives the thread instead.
 10. **Stats.** `/lfg-stats` shows the last 24 hours, 7 or 30 days of the server and its network: runs posted and open, how many filled and how fast,
    the players on them, the most popular dungeons and the busiest servers. Ended runs are kept for this for 90 days.
