@@ -567,8 +567,8 @@ func TestJoinChoicesFollowRoles(t *testing.T) {
 	if got := labels("healer", "gladiator"); !slices.Equal(got, []string{"gladiator|tank", "gladiator|dps", "cleric|healer", "chanter|healer"}) {
 		t.Errorf("healer + gladiator: %v", got)
 	}
-	if got := len(labels(config.AnyID)); got != 10 {
-		t.Errorf("any: %d choices, want every class/role pair (10)", got)
+	if got := len(labels(config.AnyID)); got != 11 {
+		t.Errorf("any: %d choices, want every class/role pair (11)", got)
 	}
 
 	for _, c := range []struct {
@@ -579,7 +579,9 @@ func TestJoinChoicesFollowRoles(t *testing.T) {
 		{[]string{"tank"}, "gladiator", "tank", true},
 		{[]string{"tank"}, "gladiator", "dps", false},
 		{[]string{"healer"}, "templar", "healer", false}, // templars can't heal
-		{[]string{config.AnyID}, "templar", "dps", false},
+		{[]string{config.AnyID}, "templar", "dps", true},
+		{[]string{"dps"}, "templar", "dps", true},
+		{[]string{config.AnyID}, "cleric", "dps", false},
 		{[]string{"cleric"}, "cleric", "healer", true},
 		{[]string{"cleric"}, "cleric", "", false},
 	} {

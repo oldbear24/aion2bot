@@ -233,7 +233,7 @@ Without an `abyss` list, `/lfg-abyss` isn't registered.
 With `factions`, every post says which faction it's for, and players of the other faction can't join it or see it in `/lfg-find` and `/lfg-notify`.
 Without them, posts don't say and anyone can join. Game servers aren't listed: there are dozens, so players type theirs,
 and a rally with a server takes players whose server matches, ignoring case and spaces.
-Class roles: Templar tanks, Gladiator tanks or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.
+Class roles: Templar and Gladiator tank or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.
 A Chanter who joins as a healer shows as DPS once a Cleric is accepted into the party, since the Cleric does the healing then; it shows as a healer again if the Cleric leaves.
 A Cleric who has only applied doesn't count. Generally, a class's `backup_roles` show as its first other role while an accepted player of another class fills them.
 Emojis can be Unicode or custom (`"<:krao:123456789012345678>"`). Keep `id`s stable: open posts refer to them.

@@ -228,6 +228,22 @@ func TestReadMemberTakesTheShownRole(t *testing.T) {
 	}
 }
 
+// A class with more than one role comes back in the one it played, like a
+// Templar as DPS.
+func TestReadMemberKeepsTheRolePlayed(t *testing.T) {
+	b := testBot(t)
+	p := lostParty()
+	p.Accepted[0].RoleID = "dps"
+	r, ok := b.readCard(sentCard(t, b, p, "g1", "", i18n.Czech), p.ID)
+	if !ok {
+		t.Fatal("card not read")
+	}
+	i := slices.IndexFunc(r.post.Accepted, func(pl lfg.Player) bool { return pl.UserID == p.Accepted[0].UserID })
+	if i < 0 || r.post.Accepted[i].ClassID != "templar" || r.post.Accepted[i].RoleID != "dps" {
+		t.Errorf("%+v", r.post.Accepted)
+	}
+}
+
 func TestCardsThatCantBeRead(t *testing.T) {
 	b := testBot(t)
 	p := lostParty()

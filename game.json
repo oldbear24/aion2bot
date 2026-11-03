@@ -93,7 +93,7 @@
   ],
   "classes": [
     { "id": "gladiator", "name": "Gladiator", "emoji": "⚔️", "roles": ["tank", "dps"] },
-    { "id": "templar", "name": "Templar", "emoji": "🛡️", "roles": ["tank"] },
+    { "id": "templar", "name": "Templar", "emoji": "🛡️", "roles": ["tank", "dps"] },
     { "id": "assassin", "name": "Assassin", "emoji": "🗡️", "roles": ["dps"] },
     { "id": "ranger", "name": "Ranger", "emoji": "🏹", "roles": ["dps"] },
     { "id": "sorcerer", "name": "Sorcerer", "emoji": "🔥", "roles": ["dps"] },
