@@ -518,7 +518,7 @@ var en = map[string]string{
 	"profile.faction_ph":    "Your faction",
 	"profile.tz_label":      "-# Time zone — for the start times you type",
 	"profile.remind_label":  "-# Reminder %s before a run you're in starts",
-	"profile.footer":        "-# Your gear score, character, faction and game server also follow the latest run you join.",
+	"profile.footer":        "-# Your gear score, character, faction and game server also follow the latest run you join. A new character name or gear score shows on the open runs you're on with that character.",
 	"profile.saved_now":     "✅ Saved.",
 	"profile.server":        "Game server",
 	"profile.server_help":   "Abyss rallies take players from one game server only.",
