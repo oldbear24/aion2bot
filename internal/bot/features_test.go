@@ -242,16 +242,32 @@ func TestFactionAndServer(t *testing.T) {
 		}
 	}
 
-	// The /lfg panel needs a faction before it posts; a rally's details ask
-	// for its game server.
+	// The /lfg panel posts without a faction, and its menu can clear one;
+	// a rally needs one. A rally's details ask for its game server.
 	d := draft{LookingFor: []string{"tank"}, Missing: 1}
 	b.selectDungeon(&d, "krao-cave")
-	if !postDisabled(b.draftPanel(d, i18n.English)) {
-		t.Error("a post without a faction can be posted")
+	if postDisabled(b.draftPanel(d, i18n.English)) {
+		t.Error("a dungeon post without a faction can't be posted")
 	}
 	d.Faction = "asmodian"
 	if postDisabled(b.draftPanel(d, i18n.English)) {
 		t.Error("a post with a faction can't be posted")
+	}
+	if opts := selectOptions(t, b.draftPanel(d, i18n.English), draftID(fieldFaction, false)); len(opts) != 3 ||
+		opts[0].Value != config.AnyID || opts[0].Default || !opts[2].Default {
+		t.Errorf("dungeon faction menu %+v", opts)
+	}
+	rally := draft{Abyss: true, LookingFor: []string{config.AnyID}}
+	b.selectDungeon(&rally, "artifact-siege")
+	if !postDisabled(b.draftPanel(rally, i18n.English)) {
+		t.Error("a rally without a faction can be posted")
+	}
+	if opts := selectOptions(t, b.draftPanel(rally, i18n.English), draftID(fieldFaction, true)); len(opts) != 2 {
+		t.Errorf("a rally's faction menu offers %+v", opts)
+	}
+	rally.Faction = "elyos"
+	if postDisabled(b.draftPanel(rally, i18n.English)) {
+		t.Error("a rally with a faction can't be posted")
 	}
 	if got := ids(b.detailsModal(d, i18n.English)); slices.Contains(got, "server") {
 		t.Errorf("a dungeon post asks for a game server: %v", got)
@@ -470,5 +486,55 @@ func TestCommandsFitDiscordLimits(t *testing.T) {
 			t.Errorf("/%s: description %q", c.Name, c.Description)
 		}
 		walk(c.Options)
+	}
+}
+
+// selectOptions lists the options of the panel's select menu with the
+// given custom ID.
+func selectOptions(t *testing.T, c discordgo.MessageComponent, customID string) []discordgo.SelectMenuOption {
+	t.Helper()
+	var walk func(c discordgo.MessageComponent) []discordgo.SelectMenuOption
+	walk = func(c discordgo.MessageComponent) []discordgo.SelectMenuOption {
+		var comps []discordgo.MessageComponent
+		switch v := c.(type) {
+		case discordgo.Container:
+			comps = v.Components
+		case discordgo.ActionsRow:
+			comps = v.Components
+		case discordgo.SelectMenu:
+			if v.CustomID == customID {
+				return v.Options
+			}
+		}
+		for _, cc := range comps {
+			if opts := walk(cc); opts != nil {
+				return opts
+			}
+		}
+		return nil
+	}
+	opts := walk(c)
+	if opts == nil {
+		t.Fatalf("no %s menu on the panel", customID)
+	}
+	return opts
+}
+
+// Any faction on the /lfg panel clears the faction from the profile; a
+// rally keeps its faction.
+func TestDungeonDraftClearsFaction(t *testing.T) {
+	f := &fakeDiscord{}
+	b := goneBot(t, f)
+	b.drafts = map[string]*draft{}
+	for _, abyss := range []bool{false, true} {
+		b.putDraft("someone", draft{Abyss: abyss, LookingFor: []string{config.AnyID}, Missing: 1, Faction: "elyos"})
+		ic := clickJSON(t, draftID(fieldFaction, abyss), discordgo.MessageFlagsIsComponentsV2, "en-US", "[]")
+		if err := b.onDraft(ic.Interaction, fieldFaction, []string{config.AnyID}, abyss); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := b.getDraft("someone", abyss)
+		if want := map[bool]string{false: "", true: "elyos"}[abyss]; d.Faction != want {
+			t.Errorf("abyss %v: Any faction leaves the draft's faction %q, want %q", abyss, d.Faction, want)
+		}
 	}
 }

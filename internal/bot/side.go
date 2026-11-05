@@ -9,10 +9,11 @@ import (
 	"aion2bot/internal/lfg"
 )
 
-// Each AION 2 game server holds one faction, and dungeons match players
-// across the servers of a faction, so a post is for one faction. The Abyss
-// pairs each server with one of the other faction, so a rally is also for
-// one game server. Players say which in /profile, or when they join.
+// Each AION 2 game server holds one faction. A dungeon run may be for one
+// faction or open to both; a rally to the Abyss, where the factions fight,
+// is always for one. The Abyss pairs each server with one of the other
+// faction, so a rally is also for one game server. Players say which in
+// /profile, or when they join.
 
 // sameServer compares game server names the way players type them.
 func sameServer(a, b string) bool {
