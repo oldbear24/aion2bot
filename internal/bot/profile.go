@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"errors"
 	"log"
 	"slices"
 	"strconv"
@@ -129,6 +130,7 @@ func (b *Bot) onProfile(i *discordgo.Interaction, field string, values []string)
 	if !ok {
 		prof = lfg.Profile{UserID: userID}
 	}
+	old := prof
 	value := first(values)
 	switch field {
 	case profEdit:
@@ -150,7 +152,7 @@ func (b *Bot) onProfile(i *discordgo.Interaction, field string, values []string)
 	case profRemind:
 		prof.SkipReminders = value == "off"
 	}
-	return b.updateProfile(i, prof)
+	return b.updateProfile(i, old, prof)
 }
 
 // onProfileSubmit saves the character, game server and gear score from the
@@ -167,18 +169,60 @@ func (b *Bot) onProfileSubmit(i *discordgo.Interaction) error {
 	if err != nil {
 		return b.update(i, b.profilePanel(prof, string(i.Locale), "⚠️ "+l.T("profile.bad_gs"), l))
 	}
+	old := prof
 	prof.GS, prof.Char, prof.Server = gs, cleanChar(first(values["char"])), cleanChar(first(values["server"]))
-	return b.updateProfile(i, prof)
+	return b.updateProfile(i, old, prof)
 }
 
-// updateProfile saves a profile and redraws the panel it was changed on.
-func (b *Bot) updateProfile(i *discordgo.Interaction, prof lfg.Profile) error {
+// updateProfile saves a profile changed from old, redraws the panel it was
+// changed on, and shows the change on the player's runs.
+func (b *Bot) updateProfile(i *discordgo.Interaction, old, prof lfg.Profile) error {
 	l := lang(i)
 	if err := b.store.SetProfile(prof); err != nil {
 		b.update(i, notice(colorClosed, errorText(err, l)))
 		return err
 	}
-	return b.update(i, b.profilePanel(prof, string(i.Locale), l.T("profile.saved_now"), l))
+	err := b.update(i, b.profilePanel(prof, string(i.Locale), l.T("profile.saved_now"), l))
+	b.followProfile(old, prof)
+	return err
+}
+
+// followProfile puts the character name and gear score a player saved in
+// /profile on the open runs they are on, so the leader and the party see
+// them. Their entries of the character the profile names, or of none,
+// follow it. A new name counts as the character renamed, so the entries
+// of the old name follow too, unless the player is already on a run as the
+// new one: then they switched to another character, and the old one's
+// entries stay, as on an alt.
+func (b *Bot) followProfile(old, prof lfg.Profile) {
+	if old.Char == prof.Char && old.GS == prof.GS {
+		return
+	}
+	var posts []lfg.Post
+	for _, p := range b.store.PostsOf(prof.UserID) {
+		if p.Active() {
+			posts = append(posts, p)
+		}
+	}
+	of := []string{prof.Char}
+	if old.Char != "" && prof.Char != "" && !strings.EqualFold(old.Char, prof.Char) &&
+		!slices.ContainsFunc(posts, func(p lfg.Post) bool { return p.Plays(prof.UserID, prof.Char) }) {
+		of = append(of, old.Char)
+	}
+	for _, p := range posts {
+		_, err := b.store.UpdatePost(p.ID, func(stored *lfg.Post) error {
+			if !stored.Active() || !stored.ShowCharacter(prof.UserID, of, prof.Char, prof.GS) {
+				return errUnchanged
+			}
+			return nil
+		})
+		switch {
+		case err == nil:
+			b.scheduleSync(p.ID)
+		case !errors.Is(err, errUnchanged):
+			log.Printf("show the profile of %s on post %s: %v", prof.UserID, p.ID, err)
+		}
+	}
 }
 
 func (b *Bot) saveProfile(prof lfg.Profile) {

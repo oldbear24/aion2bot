@@ -526,7 +526,7 @@ var cs = map[string]string{
 	"profile.faction_ph":    "Tvoje frakce",
 	"profile.tz_label":      "-# Časové pásmo — pro začátky, které zadáváš",
 	"profile.remind_label":  "-# Připomínka %s před začátkem náboru, ve kterém jsi",
-	"profile.footer":        "-# GS, postava, frakce a herní server se navíc řídí posledním náborem, do kterého se přidáš.",
+	"profile.footer":        "-# GS, postava, frakce a herní server se navíc řídí posledním náborem, do kterého se přidáš. Nové jméno postavy nebo GS se ukáže v otevřených náborech, kde jsi s touto postavou.",
 	"profile.saved_now":     "✅ Uloženo.",
 	"profile.server":        "Herní server",
 	"profile.server_help":   "Svolání do Abyssu berou hráče jen z jednoho herního serveru.",

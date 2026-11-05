@@ -538,3 +538,90 @@ func TestDungeonDraftClearsFaction(t *testing.T) {
 		}
 	}
 }
+
+// A character name and gear score saved in /profile show on the open runs
+// the player is on, but not on their alt's, nor on a run that ended.
+func TestProfileFollowsToRuns(t *testing.T) {
+	f := &fakeDiscord{}
+	b := goneBot(t, f)
+	b.drafts = map[string]*draft{}
+	create := func(p lfg.Post) lfg.Post {
+		t.Helper()
+		p.DungeonID, p.LookingFor, p.Status, p.CreatedAt, p.ExpiresAt = "krao-cave", []string{config.AnyID}, lfg.StatusOpen,
+			time.Now(), time.Now().Add(time.Hour)
+		p, err := b.store.CreatePost(p, 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	led := create(lfg.Post{LeaderID: "someone", LeaderChar: "Lunaria", LeaderGS: 3000, Missing: 2})
+	joined := create(lfg.Post{LeaderID: "L1", Missing: 2,
+		Accepted: []lfg.Player{{UserID: "someone", ClassID: "cleric", Char: "lunaria", GS: 3000}}})
+	alt := create(lfg.Post{LeaderID: "L2", Missing: 2,
+		Applicants: []lfg.Player{{UserID: "someone", ClassID: "ranger", Char: "Shadow", GS: 2100}}})
+	ended := create(lfg.Post{LeaderID: "L3", Missing: 2,
+		Accepted: []lfg.Player{{UserID: "someone", ClassID: "cleric", Char: "Lunaria", GS: 3000}}})
+	if _, err := b.store.UpdatePost(ended.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.store.SetProfile(lfg.Profile{UserID: "someone", Char: "Lunaria", GS: 3000}); err != nil {
+		t.Fatal(err)
+	}
+	b.store.AddMessages(joined.ID, []lfg.MessageRef{{GuildID: "g1", ChannelID: "c1", MessageID: "m-joined"}})
+	b.store.AddMessages(alt.ID, []lfg.MessageRef{{GuildID: "g1", ChannelID: "c1", MessageID: "m-alt"}})
+
+	submit := func(char, gs string) {
+		t.Helper()
+		raw := fmt.Sprintf(`{"id":"9","application_id":"8","type":5,"token":"tok","guild_id":"g1","channel_id":"c1","locale":"cs",
+			"member":{"user":{"id":"someone","username":"someone"},"permissions":"0"},
+			"data":{"custom_id":%q,"components":[
+				{"type":1,"components":[{"type":4,"custom_id":"char","value":%q}]},
+				{"type":1,"components":[{"type":4,"custom_id":"server","value":""}]},
+				{"type":1,"components":[{"type":4,"custom_id":"gs","value":%q}]}]}}`, idProfileModal, char, gs)
+		var ic discordgo.InteractionCreate
+		if err := json.Unmarshal([]byte(raw), &ic); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.onProfileSubmit(ic.Interaction); err != nil {
+			t.Fatal(err)
+		}
+		b.syncWG.Wait()
+	}
+	shows := func(id string) (string, int) {
+		p, _ := b.store.Post(id)
+		for _, pl := range p.People() {
+			if pl.UserID == "someone" {
+				return pl.Char, pl.GS
+			}
+		}
+		return "", 0
+	}
+
+	// A better gear score, and the name fixed.
+	submit("Lunária", "3150")
+	for name, id := range map[string]string{"led": led.ID, "joined": joined.ID} {
+		if char, gs := shows(id); char != "Lunária" || gs != 3150 {
+			t.Errorf("%s run shows %s %d", name, char, gs)
+		}
+	}
+	if char, gs := shows(alt.ID); char != "Shadow" || gs != 2100 {
+		t.Errorf("the alt's run shows %s %d", char, gs)
+	}
+	if char, gs := shows(ended.ID); char != "Lunaria" || gs != 3000 {
+		t.Errorf("the ended run shows %s %d", char, gs)
+	}
+	if !f.made("PATCH /channels/c1/messages/m-joined") || f.made("PATCH /channels/c1/messages/m-alt") {
+		t.Errorf("the changed run's card wasn't the one edited: %v", f.calls)
+	}
+
+	// Switching the profile to the alt it's already on a run with leaves
+	// the main's runs alone.
+	submit("Shadow", "2200")
+	if char, gs := shows(joined.ID); char != "Lunária" || gs != 3150 {
+		t.Errorf("the main's run shows %s %d after switching to the alt", char, gs)
+	}
+	if char, gs := shows(alt.ID); char != "Shadow" || gs != 2200 {
+		t.Errorf("the alt's run shows %s %d", char, gs)
+	}
+}

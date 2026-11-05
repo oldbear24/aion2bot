@@ -5,6 +5,7 @@ package lfg
 import (
 	"errors"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -207,6 +208,45 @@ func (p *Post) Party() []Player { return slices.Concat([]Player{p.Leader()}, p.A
 func (p *Post) Leader() Player {
 	return Player{UserID: p.LeaderID, Name: p.LeaderName, ClassID: p.LeaderClass, RoleID: p.LeaderRole, GS: p.LeaderGS,
 		GuildID: p.GuildID, GuildName: p.GuildName, Char: p.LeaderChar}
+}
+
+// ShowCharacter puts a player's character name and gear score on the post,
+// wherever they are on it, the leader included: on their entries of one of
+// the given characters (named ignoring case), or of none. An empty name or
+// a zero gear score keeps what an entry has. It reports whether anything
+// changed.
+func (p *Post) ShowCharacter(userID string, of []string, char string, gs int) bool {
+	changed := false
+	show := func(entryChar *string, entryGS *int) {
+		if *entryChar != "" && !slices.ContainsFunc(of, func(c string) bool { return strings.EqualFold(c, *entryChar) }) {
+			return
+		}
+		if char != "" && *entryChar != char {
+			*entryChar, changed = char, true
+		}
+		if gs > 0 && *entryGS != gs {
+			*entryGS, changed = gs, true
+		}
+	}
+	if p.LeaderID == userID {
+		show(&p.LeaderChar, &p.LeaderGS)
+	}
+	for _, list := range [][]Player{p.Applicants, p.Accepted, p.Reserves} {
+		for i := range list {
+			if list[i].UserID == userID {
+				show(&list[i].Char, &list[i].GS)
+			}
+		}
+	}
+	return changed
+}
+
+// Plays reports whether a player is on the post as the named character,
+// ignoring case.
+func (p *Post) Plays(userID, char string) bool {
+	return char != "" && slices.ContainsFunc(p.People(), func(pl Player) bool {
+		return pl.UserID == userID && strings.EqualFold(pl.Char, char)
+	})
 }
 
 func (p *Post) Has(userID string) bool {

@@ -54,6 +54,8 @@ It uses Discord's new components:
    A player of another faction, or from another server for a rally, can't join.
    `/profile` is a private panel: menus for the main role and class, the faction, the time zone and reminders, saved as soon as they're picked,
    and a form for the character name, game server and GS. It fills in the join form; the GS, character, faction and server also follow every join.
+   A character name or GS saved there also shows on the open runs the player leads or is on with that character (or with none named):
+   a new name counts as the character renamed, unless they're already on a run as that name, which means they switched to it, so their alt's entries stay.
    The time zone is for typed start times. Until the player picks one, it's guessed from their Discord language (Czech → Prague time).
    The character name shows on the post and in Manage, so the leader knows whom to invite; accepted players see the leader's.
    - **Reserves.** Once the party is full, **Join as reserve** puts players on a reserve list. When a party member leaves or is removed,

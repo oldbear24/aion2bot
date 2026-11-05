@@ -383,3 +383,44 @@ func TestSetLookingForAndHide(t *testing.T) {
 		t.Fatalf("change an ended post: %v", err)
 	}
 }
+
+func TestShowCharacter(t *testing.T) {
+	p := newPost(3)
+	p.LeaderChar, p.LeaderGS = "Main", 3000
+	p.Accepted = []Player{{UserID: "u", Char: "main", GS: 3000}, {UserID: "x", Char: "Main", GS: 2000}}
+	p.Applicants = []Player{{UserID: "leader2", GS: 2900}}
+	p.Reserves = []Player{{UserID: "u", Char: "Alt", GS: 2100}}
+
+	if !p.ShowCharacter("leader", []string{"Main"}, "Main", 3200) || p.LeaderGS != 3200 {
+		t.Errorf("leader shows GS %d", p.LeaderGS)
+	}
+	if p.ShowCharacter("leader", []string{"Main"}, "Main", 3200) {
+		t.Error("showing the same character again changed the post")
+	}
+	// Only the player's entries of the character, matched ignoring case,
+	// follow; their alt and other players stay.
+	if !p.ShowCharacter("u", []string{"Main"}, "Mainy", 3100) {
+		t.Error("nothing changed")
+	}
+	if got := p.Accepted[0]; got.Char != "Mainy" || got.GS != 3100 {
+		t.Errorf("entry of the character %+v", got)
+	}
+	if got := p.Reserves[0]; got.Char != "Alt" || got.GS != 2100 {
+		t.Errorf("entry of the alt %+v", got)
+	}
+	if got := p.Accepted[1]; got.Char != "Main" || got.GS != 2000 {
+		t.Errorf("another player's entry %+v", got)
+	}
+	// An entry without a character name follows; an empty name or no gear
+	// score keeps what it has.
+	if !p.ShowCharacter("leader2", []string{""}, "", 3050) || p.Applicants[0].GS != 3050 || p.Applicants[0].Char != "" {
+		t.Errorf("entry without a name %+v", p.Applicants[0])
+	}
+	if p.ShowCharacter("leader2", []string{""}, "", 0) {
+		t.Error("an empty profile changed the post")
+	}
+
+	if !p.Plays("u", "ALT") || p.Plays("u", "Main") || !p.Plays("leader", "main") || p.Plays("leader2", "") {
+		t.Error("Plays")
+	}
+}
