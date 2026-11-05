@@ -123,6 +123,9 @@ The [Release workflow](.github/workflows/release.yml) then:
 2. builds the image for amd64 and arm64 and pushes `1.1.0`, `1.1`, `1` and `latest` to `ghcr.io/oldbear24/aion2bot`,
 3. creates a GitHub release with the changes since the previous tag.
 
+Without a way to push the tag, run the workflow by hand instead: **Actions → Release → Run workflow** on `main`, with the version (`v1.1.0`).
+It does the same for the newest commit on `main`, and the release creates the tag. It stops if the version is already tagged.
+
 Use [semantic versions](https://semver.org): bump the last number for fixes, the middle one for new features, the first one for changes that need admins to do something (new permissions, removed commands).
 A tag like `v1.1.0-rc.1` publishes only `1.1.0-rc.1`, without moving `latest`.
 
