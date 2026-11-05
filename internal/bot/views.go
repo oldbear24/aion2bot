@@ -409,9 +409,18 @@ func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
 			b.choiceOptions(b.game.Choices([]string{config.AnyID}), profileChoice(lfg.Profile{ClassID: d.Class, RoleID: d.Role}))),
 	)
 	if len(b.game.Factions) > 0 {
-		comps = append(comps,
-			text(l.T("draft.faction")),
-			selectRow(id(fieldFaction), l.T("draft.faction_ph"), 1, b.factionOptions(d.Faction)))
+		if d.Abyss {
+			comps = append(comps,
+				text(l.T("draft.faction")),
+				selectRow(id(fieldFaction), l.T("draft.faction_ph"), 1, b.factionOptions(d.Faction)))
+		} else {
+			// A dungeon run can leave the faction open to anyone.
+			anyFaction := discordgo.SelectMenuOption{Label: l.T("draft.faction_any"), Value: config.AnyID,
+				Description: l.T("draft.faction_any_desc"), Emoji: emoji("👥"), Default: b.knownFaction(d.Faction) == ""}
+			comps = append(comps,
+				text(l.T("draft.faction_optional")),
+				selectRow(id(fieldFaction), l.T("draft.faction_ph"), 1, append([]discordgo.SelectMenuOption{anyFaction}, b.factionOptions(d.Faction)...)))
+		}
 	}
 	comps = append(comps, divider())
 
@@ -432,7 +441,7 @@ func (b *Bot) draftPanel(d draft, l i18n.Lang) discordgo.MessageComponent {
 		discordgo.Button{CustomID: id(fieldDetails), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
 			Emoji: emoji("✏️")},
 		discordgo.Button{CustomID: id(fieldPost), Label: l.T("draft.post"), Style: discordgo.SuccessButton,
-			Emoji: emoji("📣"), Disabled: !chosen || len(d.LookingFor) == 0 || b.needsFaction(d.Faction)},
+			Emoji: emoji("📣"), Disabled: !chosen || len(d.LookingFor) == 0 || b.needsFaction(d)},
 		discordgo.Button{CustomID: id(fieldCancel), Label: l.T("draft.cancel"), Style: discordgo.SecondaryButton},
 	}})
 	return container(colorOpen, comps...)
@@ -451,10 +460,11 @@ func sizeOptions(selected, least int, l i18n.Lang) []discordgo.SelectMenuOption 
 	return opts
 }
 
-// needsFaction reports whether a post still has to say which faction it is
-// for: whenever game.json lists factions.
-func (b *Bot) needsFaction(faction string) bool {
-	return len(b.game.Factions) > 0 && b.knownFaction(faction) == ""
+// needsFaction reports whether a draft still has to say which faction it
+// is for: a rally does whenever game.json lists factions, as the Abyss sets
+// the factions against each other. A dungeon run may leave it open.
+func (b *Bot) needsFaction(d draft) bool {
+	return d.Abyss && len(b.game.Factions) > 0 && b.knownFaction(d.Faction) == ""
 }
 
 // serverSummary is the game server line of a rally's details.

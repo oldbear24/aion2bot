@@ -22,8 +22,8 @@ It uses Discord's new components:
    - **Missing players**: limited by the mode's party size.
    - **You play**: the leader's role and class, filled in from `/profile`. The leader is listed in the party on the post,
      with their profile's character name and GS. The party is sorted by role: tanks, then DPS, then healers (the order of `roles` in `game.json`).
-   - **Faction**: Elyos or Asmodian, filled in from `/profile`. Each AION 2 server holds one faction and dungeons match players
-     across the servers of a faction, so only players of the post's faction can join it. The card shows it next to the difficulty.
+   - **Faction** (optional): Elyos or Asmodian, filled in from `/profile`, or *Any faction*. With a faction, only its players
+     can join, and the card shows it next to the difficulty; with *Any faction*, players of both can.
    - **Gear score, time & note** (all optional). The game's GS requirement for the mode is shown as a hint.
      The start is typed like `21.09.2026 10:15`, `21.9. 10:15` or just `10:15` (the next 10:15), in the leader's time zone.
      On the post it becomes a Discord timestamp, so every player sees it in their own local time with a countdown.
@@ -32,7 +32,7 @@ It uses Discord's new components:
    A player can have up to `max_runs_per_leader` open runs at once.
    **Abyss events and invasions.** `/lfg-abyss` opens the same panel for a **rally**: the Abyss event (Artifact Siege, Abyss Boss, Dimensional Invasion,
    Rift Invasion, Abyss Farm) and its zone, who you need (*Any class* until you pick otherwise), the **group size** counting you
-   (5 to 100 players, or *No limit*), what you play, your faction, and the gear score, time & note. Without a start time, the rally gathers right away.
+   (5 to 100 players, or *No limit*), what you play, your faction (a rally always needs one), and the gear score, time & note. Without a start time, the rally gathers right away.
    - The same form takes the rally's **game server** (from `/profile`, optional). The Abyss pairs each server with one of the other faction,
      so a rally with a server only takes players from it. Names are compared ignoring case and spaces, as players type them.
    - Players **join straight in**, with no one to accept them: the card counts who's going (`👥 12 going (12/20)`) and lists them by role.
@@ -203,7 +203,7 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
         { "id": "lower-reshanta", "name": "Lower Reshanta" }
       ] }                                       // no party_size: the leader picks the group size
   ],
-  "factions": [               // optional; a post is for one of them, and only its players can join
+  "factions": [               // optional; a rally is for one of them (a dungeon run may be), and only its players can join
     { "id": "elyos", "name": "Elyos", "emoji": "☀️" },
     { "id": "asmodian", "name": "Asmodian", "emoji": "🌙" }
   ],
@@ -230,8 +230,8 @@ The Abyss events are Artifact Siege and Abyss Farm, each in Lower or Middle Resh
 and Rift Invasion (going through a rift into the enemy's). Rename them or add others to match the global client.
 Dungeons and Abyss events share their `id`s, as a post names either by its `id` alone, and are at most 25 together: `/lfg-notify` and `/lfg-find` offer them in one menu.
 Without an `abyss` list, `/lfg-abyss` isn't registered.
-With `factions`, every post says which faction it's for, and players of the other faction can't join it or see it in `/lfg-find` and `/lfg-notify`.
-Without them, posts don't say and anyone can join. Game servers aren't listed: there are dozens, so players type theirs,
+With `factions`, every rally says which faction it's for, and a dungeon run may (or be open to *Any faction*); players of the other faction
+can't join a post that says, or see it in `/lfg-find` and `/lfg-notify`. Without them, posts don't say and anyone can join. Game servers aren't listed: there are dozens, so players type theirs,
 and a rally with a server takes players whose server matches, ignoring case and spaces.
 Class roles: Templar and Gladiator tank or DPS, Cleric heals, Chanter heals (support) or DPS, the other four are DPS.
 A Chanter who joins as a healer shows as DPS once a Cleric is accepted into the party, since the Cleric does the healing then; it shows as a healer again if the Cleric leaves.

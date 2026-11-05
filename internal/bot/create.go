@@ -216,6 +216,8 @@ func (b *Bot) onDraft(i *discordgo.Interaction, field string, values []string, a
 	case fieldFaction:
 		if faction := b.knownFaction(first(values)); faction != "" {
 			d.Faction = faction
+		} else if first(values) == config.AnyID && !d.Abyss {
+			d.Faction = ""
 		}
 	case fieldDetails:
 		return b.showModal(i, b.detailsModal(d, l))
@@ -274,7 +276,7 @@ func (b *Bot) postDraft(i *discordgo.Interaction, userID, name string, d draft) 
 		d.Problem = textFor("draft.need_dungeon", d.Abyss)
 	case len(d.LookingFor) == 0:
 		d.Problem = "draft.need_looking"
-	case b.needsFaction(d.Faction):
+	case b.needsFaction(d):
 		d.Problem = "draft.need_faction"
 	case b.store.Blocked(userID, i.GuildID):
 		b.dropDraft(userID, d.Abyss)

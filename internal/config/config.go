@@ -96,8 +96,8 @@ type Game struct {
 	Dungeons        []Dungeon `json:"dungeons"`
 	// Abyss lists the Abyss events and invasions, posted with /lfg-abyss.
 	Abyss []Dungeon `json:"abyss,omitempty"`
-	// Factions are the sides a post is for. Without them, posts don't say,
-	// and anyone can join any post.
+	// Factions are the sides a post is for: a rally always says, a dungeon
+	// run may. Without them, posts don't say, and anyone can join any post.
 	Factions []Faction `json:"factions,omitempty"`
 	Roles    []Role    `json:"roles"`
 	Classes  []Class   `json:"classes"`
@@ -204,7 +204,8 @@ func (g *Game) validate() error {
 	if len(g.Factions) == 1 || len(g.Factions) > maxSelectOptions {
 		return fmt.Errorf("need no factions, or between 2 and %d, got %d", maxSelectOptions, len(g.Factions))
 	}
-	factions := map[string]bool{}
+	// A dungeon run offers "any" beside the factions.
+	factions := map[string]bool{AnyID: true}
 	for _, f := range g.Factions {
 		if err := checkEntry("faction", f.ID, f.Name, factions); err != nil {
 			return err
