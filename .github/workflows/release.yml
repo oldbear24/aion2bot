@@ -3,18 +3,42 @@ name: Release
 # Pushing a version tag (git tag v1.2.3 && git push origin v1.2.3) tests the
 # code, publishes the Docker image to GitHub Container Registry and creates
 # a GitHub release with the changes since the previous tag.
+#
+# Running it by hand on main (Actions → Release → Run workflow, or the API)
+# with a version does the same for the newest commit on main, and the
+# release creates the tag. That's for when pushing a tag isn't possible.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, like v1.2.3; main is tagged with it"
+        required: true
 
 permissions:
   contents: read
+
+env:
+  TAG: ${{ inputs.version || github.ref_name }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Check the version to release
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Release from main, not $GITHUB_REF"; exit 1
+          fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$TAG isn't a version like v1.2.3"; exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "::error::$TAG is already tagged"; exit 1
+          fi
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -43,15 +67,15 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           # v1.2.3 is published as 1.2.3, 1.2, 1 and latest.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ env.TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }}
+            type=semver,pattern={{major}},value=${{ env.TAG }}
       - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: VERSION=${{ env.TAG }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -66,9 +90,9 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
           image="ghcr.io/${REPO,,}:${TAG#v}"
           printf '## Docker image\n\n```sh\ndocker pull %s\n```\n\nUpdate a running bot with `docker compose pull && docker compose up -d` (see DEPLOY.md).\n' "$image" > notes.md
-          gh release create "$TAG" --repo "$REPO" --title "$TAG" --generate-notes --notes-file notes.md
+          # A tag that doesn't exist yet is made on the commit that was tested.
+          gh release create "$TAG" --repo "$REPO" --title "$TAG" --target "$GITHUB_SHA" --generate-notes --notes-file notes.md
