@@ -105,6 +105,23 @@ CREATE TABLE IF NOT EXISTS relays (
 	webhook_token TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS relays_by_source ON relays (source_id);
+CREATE TABLE IF NOT EXISTS relayed (
+	source_id  TEXT PRIMARY KEY,
+	post_id    TEXT NOT NULL REFERENCES posts (id) ON DELETE CASCADE,
+	guild_id   TEXT NOT NULL,
+	channel_id TEXT NOT NULL,
+	author_id  TEXT NOT NULL,
+	author     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reactions (
+	message_id TEXT NOT NULL,
+	emoji      TEXT NOT NULL,
+	user_id    TEXT NOT NULL,
+	source_id  TEXT NOT NULL,
+	post_id    TEXT NOT NULL REFERENCES posts (id) ON DELETE CASCADE,
+	PRIMARY KEY (message_id, emoji, user_id)
+);
+CREATE INDEX IF NOT EXISTS reactions_by_source ON reactions (source_id, emoji);
 CREATE TABLE IF NOT EXISTS webhooks (
 	channel_id TEXT PRIMARY KEY,
 	webhook_id TEXT NOT NULL,
@@ -239,6 +256,8 @@ var migrations = []string{
 	`ALTER TABLE profiles ADD COLUMN faction TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE profiles ADD COLUMN server TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE posts ADD COLUMN invites TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE relays ADD COLUMN guild_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE relays ADD COLUMN quote TEXT NOT NULL DEFAULT ''`,
 }
 
 var addColumn = regexp.MustCompile(`^ALTER TABLE (\w+) ADD COLUMN (\w+) `)
@@ -670,12 +689,20 @@ func (s *Store) PostByThread(threadID string) (Post, bool) {
 }
 
 // AddRelays records the copies of a player's message relayed to the
-// threads on other servers, so edits and deletes can follow it.
-func (s *Store) AddRelays(postID, sourceID string, copies []Relay) {
+// threads on other servers, so edits, deletes and reactions can follow it.
+func (s *Store) AddRelays(src Relayed, copies []Relay) {
+	if len(copies) == 0 {
+		return
+	}
 	err := s.inTx(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`INSERT OR REPLACE INTO relayed (source_id, post_id, guild_id, channel_id, author_id, author)
+			VALUES (?, ?, ?, ?, ?, ?)`, src.MessageID, src.PostID, src.GuildID, src.ChannelID, src.AuthorID, src.Author)
+		if err != nil {
+			return err
+		}
 		for _, c := range copies {
-			_, err := tx.Exec(`INSERT OR REPLACE INTO relays (message_id, source_id, post_id, channel_id, webhook_id, webhook_token)
-				VALUES (?, ?, ?, ?, ?, ?)`, c.MessageID, sourceID, postID, c.ChannelID, c.Webhook.ID, c.Webhook.Token)
+			_, err := tx.Exec(`INSERT OR REPLACE INTO relays (message_id, source_id, post_id, guild_id, channel_id, webhook_id, webhook_token, quote)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, c.MessageID, src.MessageID, src.PostID, c.GuildID, c.ChannelID, c.Webhook.ID, c.Webhook.Token, c.Quote)
 			if err != nil {
 				return err
 			}
@@ -683,13 +710,13 @@ func (s *Store) AddRelays(postID, sourceID string, copies []Relay) {
 		return nil
 	})
 	if err != nil {
-		log.Printf("store: save relays of message %s: %v", sourceID, err)
+		log.Printf("store: save relays of message %s: %v", src.MessageID, err)
 	}
 }
 
 // Relays lists the copies of a relayed message.
 func (s *Store) Relays(sourceID string) []Relay {
-	rows, err := s.db.Query(`SELECT message_id, channel_id, webhook_id, webhook_token FROM relays WHERE source_id = ?`, sourceID)
+	rows, err := s.db.Query(`SELECT message_id, guild_id, channel_id, webhook_id, webhook_token, quote FROM relays WHERE source_id = ?`, sourceID)
 	if err != nil {
 		log.Printf("store: list relays of message %s: %v", sourceID, err)
 		return nil
@@ -698,16 +725,92 @@ func (s *Store) Relays(sourceID string) []Relay {
 	var out []Relay
 	for rows.Next() {
 		var r Relay
-		if err := rows.Scan(&r.MessageID, &r.ChannelID, &r.Webhook.ID, &r.Webhook.Token); err == nil {
+		if err := rows.Scan(&r.MessageID, &r.GuildID, &r.ChannelID, &r.Webhook.ID, &r.Webhook.Token, &r.Quote); err == nil {
 			out = append(out, r)
 		}
 	}
 	return out
 }
 
+// RelayGroup finds a relayed message and its copies from any one of them.
+// Messages relayed before the bot recorded where they were written come
+// with only their ID and post.
+func (s *Store) RelayGroup(messageID string) (Relayed, []Relay, bool) {
+	var src Relayed
+	err := s.db.QueryRow(`SELECT source_id, post_id FROM relays WHERE message_id = ? OR source_id = ? LIMIT 1`,
+		messageID, messageID).Scan(&src.MessageID, &src.PostID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("store: find relays of message %s: %v", messageID, err)
+		}
+		return Relayed{}, nil, false
+	}
+	err = s.db.QueryRow(`SELECT guild_id, channel_id, author_id, author FROM relayed WHERE source_id = ?`, src.MessageID).
+		Scan(&src.GuildID, &src.ChannelID, &src.AuthorID, &src.Author)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("store: load relayed message %s: %v", src.MessageID, err)
+	}
+	return src, s.Relays(src.MessageID), true
+}
+
+// RemoveRelays forgets a relayed message, its copies and their reactions.
 func (s *Store) RemoveRelays(sourceID string) {
-	if _, err := s.db.Exec(`DELETE FROM relays WHERE source_id = ?`, sourceID); err != nil {
+	err := s.inTx(func(tx *sql.Tx) error {
+		for _, table := range []string{"relays", "relayed", "reactions"} {
+			if _, err := tx.Exec(`DELETE FROM `+table+` WHERE source_id = ?`, sourceID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		log.Printf("store: forget relays of message %s: %v", sourceID, err)
+	}
+}
+
+// AddReaction records a reaction on a relayed message or one of its
+// copies; src is the relayed message.
+func (s *Store) AddReaction(src Relayed, r Reaction) {
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO reactions (message_id, emoji, user_id, source_id, post_id) VALUES (?, ?, ?, ?, ?)`,
+		r.MessageID, r.Emoji, r.UserID, src.MessageID, src.PostID)
+	if err != nil {
+		log.Printf("store: save reaction on message %s: %v", r.MessageID, err)
+	}
+}
+
+func (s *Store) RemoveReaction(r Reaction) {
+	_, err := s.db.Exec(`DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?`, r.MessageID, r.Emoji, r.UserID)
+	if err != nil {
+		log.Printf("store: forget reaction on message %s: %v", r.MessageID, err)
+	}
+}
+
+// Reactions lists the reactions with an emoji on a relayed message and
+// its copies, or all their reactions when emoji is empty.
+func (s *Store) Reactions(sourceID, emoji string) []Reaction {
+	rows, err := s.db.Query(`SELECT message_id, emoji, user_id FROM reactions WHERE source_id = ? AND (? = '' OR emoji = ?)
+		ORDER BY message_id, emoji, user_id`, sourceID, emoji, emoji)
+	if err != nil {
+		log.Printf("store: list reactions on message %s: %v", sourceID, err)
+		return nil
+	}
+	defer rows.Close()
+	var out []Reaction
+	for rows.Next() {
+		var r Reaction
+		if err := rows.Scan(&r.MessageID, &r.Emoji, &r.UserID); err == nil {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// ForgetReactions forgets the reactions with an emoji on a relayed message
+// and its copies, or all their reactions when emoji is empty.
+func (s *Store) ForgetReactions(sourceID, emoji string) {
+	_, err := s.db.Exec(`DELETE FROM reactions WHERE source_id = ? AND (? = '' OR emoji = ?)`, sourceID, emoji, emoji)
+	if err != nil {
+		log.Printf("store: forget reactions on message %s: %v", sourceID, err)
 	}
 }
 

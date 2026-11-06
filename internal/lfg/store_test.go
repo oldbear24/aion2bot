@@ -206,22 +206,62 @@ func TestThreadsRelaysAndWebhooks(t *testing.T) {
 	}
 
 	hook := Webhook{ID: "w2", Token: "secret"}
-	s.AddRelays(p.ID, "src", []Relay{{ChannelID: "m2", MessageID: "copy2", Webhook: hook}, {ChannelID: "m3", MessageID: "copy3"}})
+	src := Relayed{PostID: p.ID, GuildID: "g1", ChannelID: "m1", MessageID: "src", AuthorID: "u1", Author: "Pepa"}
+	s.AddRelays(src, []Relay{{GuildID: "g2", ChannelID: "m2", MessageID: "copy2", Webhook: hook, Quote: "-# ↪ quote"},
+		{GuildID: "g3", ChannelID: "m3", MessageID: "copy3"}})
 	got := s.Relays("src")
 	slices.SortFunc(got, func(a, b Relay) int { return strings.Compare(a.MessageID, b.MessageID) })
-	if len(got) != 2 || got[0].Webhook != hook || got[1].Webhook != (Webhook{}) || got[1].ChannelID != "m3" {
+	if len(got) != 2 || got[0].Webhook != hook || got[0].Quote != "-# ↪ quote" || got[0].GuildID != "g2" ||
+		got[1].Webhook != (Webhook{}) || got[1].ChannelID != "m3" {
 		t.Fatalf("relays %+v", got)
 	}
+
+	// The message and its copies are found from any of them.
+	for _, id := range []string{"src", "copy2", "copy3"} {
+		gotSrc, copies, ok := s.RelayGroup(id)
+		if !ok || gotSrc != src || len(copies) != 2 {
+			t.Fatalf("group of %s: ok %v, %+v, %d copies", id, ok, gotSrc, len(copies))
+		}
+	}
+	if _, _, ok := s.RelayGroup("m1"); ok {
+		t.Fatal("a message never relayed has a group")
+	}
+
+	// Reactions are kept per message, emoji and user, for the whole group.
+	s.AddReaction(src, Reaction{MessageID: "src", Emoji: "👍", UserID: "u2"})
+	s.AddReaction(src, Reaction{MessageID: "src", Emoji: "👍", UserID: "u2"})
+	s.AddReaction(src, Reaction{MessageID: "copy2", Emoji: "👍", UserID: "bot"})
+	s.AddReaction(src, Reaction{MessageID: "copy3", Emoji: "lfg:1", UserID: "u3"})
+	if got := s.Reactions("src", "👍"); len(got) != 2 || got[0].MessageID != "copy2" || got[1].UserID != "u2" {
+		t.Fatalf("reactions with 👍: %+v", got)
+	}
+	if got := s.Reactions("src", ""); len(got) != 3 {
+		t.Fatalf("all reactions: %+v", got)
+	}
+	s.RemoveReaction(Reaction{MessageID: "src", Emoji: "👍", UserID: "u2"})
+	s.ForgetReactions("src", "lfg:1")
+	if got := s.Reactions("src", ""); len(got) != 1 || got[0].UserID != "bot" {
+		t.Fatalf("reactions left: %+v", got)
+	}
+
 	s.RemoveRelays("src")
 	if got := s.Relays("src"); len(got) != 0 {
 		t.Fatalf("relays left after removing: %+v", got)
 	}
+	if got := s.Reactions("src", ""); len(got) != 0 {
+		t.Fatalf("reactions left after removing: %+v", got)
+	}
 
 	// Relays go with their post.
-	s.AddRelays(p.ID, "src2", []Relay{{ChannelID: "m2", MessageID: "copy4"}})
+	src.MessageID = "src2"
+	s.AddRelays(src, []Relay{{ChannelID: "m2", MessageID: "copy4"}})
+	s.AddReaction(src, Reaction{MessageID: "copy4", Emoji: "👍", UserID: "u2"})
 	s.DeletePost(p.ID)
 	if got := s.Relays("src2"); len(got) != 0 {
 		t.Fatalf("relays outlived their post: %+v", got)
+	}
+	if got := s.Reactions("src2", ""); len(got) != 0 {
+		t.Fatalf("reactions outlived their post: %+v", got)
 	}
 
 	if _, ok := s.Webhook("c1"); ok {

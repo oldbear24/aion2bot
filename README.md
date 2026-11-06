@@ -96,6 +96,15 @@ It uses Discord's new components:
      Players accepted later were told the start already, and anyone can turn reminders off in `/profile`.
    - What players write in one thread is relayed to the threads on the other servers, under the player's name and avatar (through a webhook in the LFG channel).
      Without *Manage Webhooks* the bot posts them itself, led by the player's name. Edits and deletes follow, so moderating one server's thread covers all of them.
+     Attachments and stickers come along as pictures (animated stickers, which Discord has no picture of, by name), and a forwarded message as a quote.
+     Emojis stay as they are; another server's own emojis show where the channel lets the webhook (through @everyone) or the bot use external emojis, and as `:name:` elsewhere.
+   - **Replies** stay replies: the copy starts with a small line like Discord's own, `↪ Ann: Need a healer?`, the name linked to the copy of Ann's message on that server.
+     Webhooks can't reply, so where the bot posts the copies itself, it replies to that copy for real. Relayed replies ping nobody, like everything relayed.
+     A reply to a message that wasn't relayed to a server, as its author is blocked there, has no line there, and neither has a reply to the bot's notes, which each server has its own of.
+   - **Reactions** follow too: when someone reacts on one server, the bot adds the same reaction on the copies on the other servers (and on the message itself, for a reaction on a copy).
+     The bot counts once however many reacted elsewhere, so each server sees its own players' reactions plus the bot's for everyone else,
+     and the bot takes its reaction back once nobody elsewhere has that one left. A moderator who clears a message's reactions also clears what the bot added on the other servers.
+     Emojis from a server the bot isn't on can't be added elsewhere.
    - The leader and everyone who joined are added to the thread on every linked server they're a member of.
    - The leader and the players are linked with @mentions on every server they're a member of; elsewhere they show by name, since Discord can't resolve the mention there.
 
@@ -140,14 +149,15 @@ All texts live in `internal/i18n` (`en.go`, `cs.go`); a test checks both catalog
 2. Invite the bot to each server (replace `APP_ID`):
 
    ```
-   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=309774519296
+   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=309774847040
    ```
 
-   `309774519296` is all the bot needs: View Channel and Send Messages to post, Create Public Threads and Send Messages in Threads for the thread under each post,
-   and Manage Webhooks to show relayed messages under each player's name and avatar.
-   Use `309774650368` to also add *Mention @everyone, @here and All Roles*, which lets the bot ping a ping role that isn't set as mentionable.
-   Nothing else is needed: the bot only edits and deletes its own messages and threads, and buttons, forms and commands work through interactions.
-   Most servers give the thread permissions to @everyone, so older invites keep working; `/lfg-check` shows if one is missing.
+   `309774847040` is all the bot needs: View Channel and Send Messages to post, Create Public Threads and Send Messages in Threads for the thread under each post,
+   Manage Webhooks to show relayed messages under each player's name and avatar, Add Reactions and Read Message History to carry reactions over,
+   and Use External Emojis for the other servers' emojis in what it relays.
+   Use `309774978112` to also add *Mention @everyone, @here and All Roles*, which lets the bot ping a ping role that isn't set as mentionable.
+   Nothing else is needed: the bot only edits and deletes its own messages, threads and reactions, and buttons, forms and commands work through interactions.
+   Most servers give the thread, reaction and emoji permissions to @everyone, so older invites keep working; `/lfg-check` shows if one is missing.
    Servers invited before relaying existed can give the bot's role *Manage Webhooks* in the LFG channel; until then, relayed messages come from the bot itself.
 3. Run the released Docker image on a server: see **[DEPLOY.md](DEPLOY.md)**. In short:
 
