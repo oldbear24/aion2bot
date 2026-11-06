@@ -39,23 +39,30 @@ func testBot(t *testing.T) *Bot {
 }
 
 // iconBot uses application emojis for roles and classes, as in production,
-// where each is far longer than the emoji in game.json.
+// where each is far longer than the emoji in game.json. They're written as
+// emoji.Sync names them: "lfg_", the id and a hash of the image. Like
+// production, it also has the interface icons, so panels that make room
+// for them count them in.
 func iconBot(t *testing.T) *Bot {
 	b := testBot(t)
 	icons := map[string]string{}
 	for _, r := range b.game.Roles {
-		icons[r.ID] = "<:" + r.ID + ":1234567890123456789>"
+		icons[r.ID] = gameIcon(r.ID)
 	}
 	for _, c := range b.game.Classes {
-		icons[c.ID] = "<:" + c.ID + ":1234567890123456789>"
+		icons[c.ID] = gameIcon(c.ID)
 	}
 	for _, f := range b.game.Factions {
-		icons[f.ID] = "<:" + f.ID + ":1234567890123456789>"
+		icons[f.ID] = gameIcon(f.ID)
 	}
-	icons["leader"] = "<:leader:1234567890123456789>"
+	icons["leader"] = gameIcon("leader")
 	b.game.UseIcons(icons)
+	b.icons = testIcons
 	return b
 }
+
+// gameIcon is how a message shows the icon of a role, class or faction.
+func gameIcon(id string) string { return "<:lfg_" + id + "_a1b2c3:1234567890123456789>" }
 
 // busyPost is the largest post the bot allows, with long names everywhere.
 func busyPost(b *Bot) lfg.Post {
@@ -663,7 +670,7 @@ func TestLeaderIsInTheParty(t *testing.T) {
 	// With the bundled icons, the leader wears the custom crown.
 	b = iconBot(t)
 	roster = b.rosterText(p, "", true, i18n.English)
-	if want := " <:leader:1234567890123456789> **Lea**"; !strings.Contains(roster, want) || strings.Contains(roster, "👑") {
+	if want := " " + gameIcon("leader") + " **Lea**"; !strings.Contains(roster, want) || strings.Contains(roster, "👑") {
 		t.Errorf("roster misses %q:\n%s", want, roster)
 	}
 }
