@@ -24,6 +24,7 @@ const (
 	profFaction    = "faction"
 	profZone       = "tz"
 	profRemind     = "remind"
+	profDM         = "dm"
 	profEdit       = "edit"
 	idProfileModal = profilePrefix + "save"
 )
@@ -35,8 +36,8 @@ const maxChar = 24
 // /profile shows what a player saved about themselves, to change it: their
 // main role and class, which the join form starts from, their faction,
 // character, game server and gear score, which /lfg-find and /lfg-notify
-// match runs to, their time zone, and whether they want reminders before
-// runs start.
+// match runs to, their time zone, whether they want reminders before runs
+// start, and whether the bot pings them in the threads or by DM.
 func (b *Bot) cmdProfile(i *discordgo.Interaction) error {
 	userID, _ := interactionUser(i)
 	prof, _ := b.store.Profile(userID)
@@ -92,6 +93,11 @@ func (b *Bot) profilePanel(prof lfg.Profile, locale, done string, l i18n.Lang) d
 		selectRow(profilePrefix+profRemind, l.T("profile.remind"), 1, []discordgo.SelectMenuOption{
 			{Label: l.T("profile.remind_on"), Value: "on", Emoji: emoji("⏰"), Default: !prof.SkipReminders},
 			{Label: l.T("profile.remind_off"), Value: "off", Emoji: emoji("🔕"), Default: prof.SkipReminders},
+		}),
+		text(l.T("profile.dm_label")),
+		selectRow(profilePrefix+profDM, l.T("profile.dm"), 1, []discordgo.SelectMenuOption{
+			{Label: l.T("profile.dm_off"), Value: "off", Emoji: emoji("💬"), Default: !prof.ByDM},
+			{Label: l.T("profile.dm_on"), Value: "on", Emoji: emoji("📩"), Default: prof.ByDM},
 		}),
 		text(l.T("profile.footer")),
 	)
@@ -151,8 +157,38 @@ func (b *Bot) onProfile(i *discordgo.Interaction, field string, values []string)
 		}
 	case profRemind:
 		prof.SkipReminders = value == "off"
+	case profDM:
+		if value == "on" && !prof.ByDM {
+			return b.turnOnDMs(i, prof)
+		}
+		prof.ByDM = value == "on"
 	}
 	return b.updateProfile(i, old, prof)
+}
+
+// turnOnDMs has the player's pings sent by DM from now on, once a first DM
+// says so. Discord refuses DMs from the bot to a player who doesn't take
+// DMs from the members of the servers they share; they stay pinged in the
+// threads, and the panel says what to change. The panel is redrawn once the
+// DM went out, as it may take longer than Discord waits for an answer.
+func (b *Bot) turnOnDMs(i *discordgo.Interaction, prof lfg.Profile) error {
+	l := lang(i)
+	if err := b.respond(i, discordgo.InteractionResponseDeferredMessageUpdate, nil); err != nil {
+		return err
+	}
+	if !b.dm(prof.UserID, notice(colorOpen, l.T("dm.by_dm", b.cmd("profile")))) {
+		return b.editReply(i, b.profilePanel(prof, string(i.Locale), "⚠️ "+l.T("profile.dm_refused"), l))
+	}
+	// A join meanwhile may have changed the profile.
+	if now, ok := b.store.Profile(prof.UserID); ok {
+		prof = now
+	}
+	prof.ByDM = true
+	if err := b.store.SetProfile(prof); err != nil {
+		b.editReply(i, notice(colorClosed, errorText(err, l)))
+		return err
+	}
+	return b.editReply(i, b.profilePanel(prof, string(i.Locale), l.T("profile.dm_saved"), l))
 }
 
 // onProfileSubmit saves the character, game server and gear score from the

@@ -207,7 +207,8 @@ var en = map[string]string{
 	"move.abyss_yes":            "Change event",
 	"find.abyss_option_missing": "%d going",
 
-	// DMs, when a ping can't go to a thread.
+	// DMs, for players who get their pings by DM, or when a ping can't go
+	// to a thread.
 	"ping.leader_char": "🎮 The leader plays %s in game.",
 	"dm.promoted":      "### 🎉 You moved up from the reserves!\nA spot opened up: **%s** (<@%s>) now has you in %s as %s.\n🕒 Start: %s\nMessage them to get your in-game invite.",
 	"dm.reminder":      "### ⏰ Your %s run starts <t:%d:R>\nAt <t:%d:t>. Time to get ready!",
@@ -381,7 +382,7 @@ var en = map[string]string{
 
 	// /help.
 	"help.title":  "## 📖 AION 2 party finder",
-	"help.find":   "### 🔎 Find a party\n• %s lists the open runs you can join with your class, gear score and faction; pick one to join. %s DMs you when a new one comes up.\n• Or watch the LFG channel: posts from this server and the servers linked with it show up there.\n• Click **✋ Join**, pick your role and class, and enter your gear score and character name. You're added to the thread under the post.\n• Party already full? **🪑 Join as reserve**: if a player with your role leaves, you move up automatically.\n• Talk to the leader and the party in that thread; it's shared with every linked server.\n• When the leader accepts you, you're pinged once in the thread, and reminded %s before a planned start. Message the leader for the in-game invite.\n• Changed your mind? Click **Leave** on the post. %s lists every run you lead or joined.\n• %s saves your main role, class, faction, character, game server and gear score, so the join form is filled in for you. You can turn the reminders off there.",
+	"help.find":   "### 🔎 Find a party\n• %s lists the open runs you can join with your class, gear score and faction; pick one to join. %s DMs you when a new one comes up.\n• Or watch the LFG channel: posts from this server and the servers linked with it show up there.\n• Click **✋ Join**, pick your role and class, and enter your gear score and character name. You're added to the thread under the post.\n• Party already full? **🪑 Join as reserve**: if a player with your role leaves, you move up automatically.\n• Talk to the leader and the party in that thread; it's shared with every linked server.\n• When the leader accepts you, you're pinged once in the thread, and reminded %s before a planned start. Message the leader for the in-game invite.\n• Changed your mind? Click **Leave** on the post. %s lists every run you lead or joined.\n• %s saves your main role, class, faction, character, game server and gear score, so the join form is filled in for you. Turn reminders off or get pings by DM there.",
 	"help.post":   "### 📣 Post a run\n• %s opens a private panel: dungeon or raid, difficulty, who you need (%s, specific classes or Any class), how many players are missing and what you play.\n• Optional: your faction (then only its players can join), a minimum gear score, a start time and a note.\n• **Post** sends it to every linked server. You're pinged once, in the thread under the post, when the first player joins.\n• **⚙️ Manage** on the post: accept, decline or **invite** players (invited ones skip the queue), change who you're looking for, the gear score, start and note (✏️), the missing count (−1/+1) or the dungeon (🗺️), hand the post over, **🔒 Close**, **🗑️ Delete** or **🔓 Reopen** it, or **copy** it to a new date with everyone on it.\n• The thread under the post starts with it, so players can ask you questions; it's shared with every linked server.\n• You can have up to %d open runs. Runs stay open for %s and disappear 24 hours after they end.\n• %s shows how many runs were posted and filled, and the most popular dungeons.",
 	"help.abyss":  "### 🏰 Abyss events\n• %s gathers players for %s. They join straight in, without waiting for you, up to the group size you pick, or with no limit.\n• A rally is always for one faction, and can name its game server; the Abyss pairs servers, so only players from it can join.\n• Once the group is full, new players join as reserves and move up, first come first served, when a spot opens.\n• Manage removes players and changes the group size; the rest works like any run.",
 	"help.admin":  "### 🛠️ Server admins\n• %s picks the LFG channel, the role to ping and the language, and checks the bot's permissions.\n• %s checks permissions, the ping role and the server's links at any time.\n• %s starts a network and gives a join code; other servers use %s to link up and share posts. %s shows the linked servers.\n• %s stops posts arriving here; %s posts this guide for everyone.\n• Moderators (Manage Messages) can remove any post from this server and block players, from its Manage. Posts made here, or anywhere in the network this server owns, they can also close, delete or hand over. %s lists the blocks.",
@@ -527,6 +528,13 @@ var en = map[string]string{
 	"profile.server":        "Game server",
 	"profile.server_help":   "Abyss rallies take players from one game server only.",
 	"profile.server_ph":     "e.g. Siel",
+	"profile.dm_label":      "-# Pings about your runs — in the thread under the post, or by DM",
+	"profile.dm":            "Where to ping you",
+	"profile.dm_off":        "Ping me in the thread",
+	"profile.dm_on":         "Send me a DM",
+	"profile.dm_saved":      "✅ Saved. Your pings now come by DM: check the message I just sent you.",
+	"profile.dm_refused":    "I couldn't send you a DM, so your pings stay in the thread. Allow direct messages from server members in Discord's privacy settings, then try again.",
+	"dm.by_dm":              "### 📩 Your pings come here now\nInstead of pinging you in the thread under a post, I'll message you here: when the first player joins your run or a run is handed to you, when you get into a party, before a run you're in starts, and when a leader invites you or copies a run with you on it. The threads still show it all.\n-# Want them in the thread again? Switch back in %s.",
 
 	// Copying a post to a new start.
 	"manage.copy":          "Copy to a new date",

@@ -32,6 +32,9 @@ type fakeDiscord struct {
 	calls  []string
 	bodies []string
 	answer func(call string) (status int, body string)
+	// answerSent answers instead of answer when set, knowing what the bot
+	// sent with the call.
+	answerSent func(call, sent string) (status int, body string)
 }
 
 func (f *fakeDiscord) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -51,7 +54,10 @@ func (f *fakeDiscord) RoundTrip(r *http.Request) (*http.Response, error) {
 	f.calls = append(f.calls, call)
 	f.bodies = append(f.bodies, string(sent))
 	status, body := http.StatusOK, "{}"
-	if f.answer != nil {
+	switch {
+	case f.answerSent != nil:
+		status, body = f.answerSent(call, string(sent))
+	case f.answer != nil:
 		status, body = f.answer(call)
 	}
 	return &http.Response{StatusCode: status, Status: http.StatusText(status), Header: http.Header{},

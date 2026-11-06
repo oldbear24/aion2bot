@@ -574,6 +574,22 @@ def invite(g):  # an envelope
     g.capsule((94, 84), (76, 68), 5, cut=True)
 
 
+def thread(g):  # a speech bubble: pinged in the thread under the post
+    g.rrect((24, 28, 104, 86), 20)
+    g.poly([(38, 78), (62, 78), (34, 104)])
+    g.right()
+    g.capsule((42, 48), (86, 48), 8, cut=True)
+    g.capsule((42, 66), (70, 66), 8, cut=True)
+
+
+def dm(g):  # an envelope with an arrow into it: pinged by DM
+    g.rrect((24, 58, 104, 106), 10)
+    g.right()
+    g.line([(34, 68), (64, 88), (94, 68)], 7, cut=True)
+    g.capsule((64, 18), (64, 36), 11, tint=True)
+    g.poly([(46, 32), (82, 32), (64, 52)], tint=True)
+
+
 def sparkle(g, c, r, tint=False):  # a four-pointed star
     x, y = c
     w = r * 0.28
@@ -611,6 +627,7 @@ ICONS = {
     "unknown": (SLATE, unknown, "circle"),
     "castle": (NAVY, castle), "boss": (RED, boss), "portal": (PURPLE, portal), "flag": (ORANGE, flag),
     "loot": (GOLD, loot), "blocked": (RED, blocked), "copy": (PURPLE, copy), "invite": (SKY, invite),
+    "thread": (BLUE, thread), "dm": (PURPLE, dm),
 }
 
 # Game icons sit next to the role and class icons in internal/emoji/images,
