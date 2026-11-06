@@ -20,11 +20,16 @@ import (
 // joinNote tells the leader that a player wants to join, or signed up as a
 // reserve, with a Manage button to accept them.
 //
-// A rally's player is in already; the leader hears about the first one.
+// A rally's player is in already, and so is a player the leader invited;
+// the leader hears about the first one.
 func (b *Bot) joinNote(p lfg.Post, pl lfg.Player, reserve bool, guildID string, l i18n.Lang) discordgo.MessageComponent {
 	color, title, intro, hint := colorOpen, "thread.join_title", "thread.join", "thread.join_hint"
-	if reserve {
+	switch {
+	case reserve:
 		color, title, intro, hint = colorFull, "thread.reserve_title", "thread.reserve", "thread.reserve_hint"
+	// Only an invitation takes a player into a dungeon party at once.
+	case !p.Rally && p.InParty(pl.UserID):
+		title, intro, hint = "thread.invite_joined_title", "thread.invite_joined", "thread.invite_joined_hint"
 	}
 	intro, hint = textFor(intro, p.Rally), textFor(hint, p.Rally)
 	leader := who(p.LeaderID, p.LeaderName, b.mentionable(p.LeaderID, p.GuildID, guildID))

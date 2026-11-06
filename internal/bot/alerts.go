@@ -123,7 +123,8 @@ func (b *Bot) sendAlerts(postID string) {
 	}
 	var due []lfg.Alert
 	for _, a := range b.store.AlertsIn(p.GuildIDs()) {
-		if a.UserID != p.LeaderID && b.alertMatches(a, p) {
+		// A copy of a run already has its players on it.
+		if a.UserID != p.LeaderID && !p.Has(a.UserID) && !p.IsInvited(a.UserID) && b.alertMatches(a, p) {
 			due = append(due, a)
 		}
 	}

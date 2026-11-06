@@ -45,6 +45,25 @@ func (b *Bot) remind(postID string) {
 // remindRally pings a rally's players by their mentions, as its roster
 // may be too long to name them all, mentionBatch per message.
 func (b *Bot) remindRally(p lfg.Post, pings map[string][]string) {
+	b.pingInBatches(p, pings, func(_ string, users []string, _ bool, l i18n.Lang) discordgo.MessageComponent {
+		if len(users) == 0 {
+			return nil
+		}
+		return b.rallyReminderNote(p, users, l)
+	}, func(guildID string, users []string) {
+		b.remindByDM(p, map[string][]string{guildID: users}, nil)
+	})
+}
+
+// pingInBatches posts notes that ping users in the threads under a post,
+// mentionBatch of them per note on each server. note makes the note for a
+// server and its users in the batch, who may be none, or returns nil for
+// nothing; first is set for the first batch, which goes to every server.
+// missed gets the users on servers a note didn't reach, to tell them
+// another way. Callers run learnMembers first, as for announce.
+func (b *Bot) pingInBatches(p lfg.Post, pings map[string][]string,
+	note func(guildID string, users []string, first bool, l i18n.Lang) discordgo.MessageComponent,
+	missed func(guildID string, users []string)) {
 	for lo := 0; ; lo += mentionBatch {
 		batch := map[string][]string{}
 		for guildID, users := range pings {
@@ -56,12 +75,13 @@ func (b *Bot) remindRally(p lfg.Post, pings map[string][]string) {
 			return
 		}
 		reached := b.announce(p, batch, true, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
-			if len(batch[guildID]) == 0 {
-				return nil
-			}
-			return b.rallyReminderNote(p, batch[guildID], l)
+			return note(guildID, batch[guildID], lo == 0, l)
 		})
-		b.remindByDM(p, batch, reached)
+		for guildID, users := range batch {
+			if !reached[guildID] {
+				missed(guildID, users)
+			}
+		}
 	}
 }
 

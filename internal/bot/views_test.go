@@ -213,7 +213,7 @@ func TestModalsFitDiscordLimits(t *testing.T) {
 	r.Faction, r.Server = "elyos", strings.Repeat("S", maxChar)
 	for _, lang := range i18n.Langs {
 		for _, m := range []modal{b.detailsModal(d, lang), b.detailsModal(abyss, lang), b.editModal(r, time.UTC, lang),
-			b.joinModal(busyPost(b), prof, lang), b.joinModal(r, prof, lang), b.profileForm(prof, lang)} {
+			b.joinModal(busyPost(b), prof, false, lang), b.joinModal(busyPost(b), prof, true, lang), b.joinModal(r, prof, false, lang), b.profileForm(prof, lang)} {
 			if len(m.Components) > 5 || len([]rune(m.Title)) > 45 || len(m.CustomID) > 100 {
 				t.Fatalf("%s modal %q has %d components", lang, m.Title, len(m.Components))
 			}
@@ -259,7 +259,7 @@ func TestOtherPanelsFitDiscordLimits(t *testing.T) {
 func TestJoinFormStartsFromProfile(t *testing.T) {
 	b := testBot(t)
 	p := busyPost(b)
-	m := b.joinModal(p, lfg.Profile{ClassID: "gladiator", RoleID: "tank", GS: 3150}, i18n.English)
+	m := b.joinModal(p, lfg.Profile{ClassID: "gladiator", RoleID: "tank", GS: 3150}, false, i18n.English)
 	sel := m.Components[0].(discordgo.Label).Component.(modalSelect)
 	var picked []string
 	for _, o := range sel.Options {
@@ -276,7 +276,7 @@ func TestJoinFormStartsFromProfile(t *testing.T) {
 
 	// A saved combination the post doesn't ask for isn't forced on the player.
 	p.LookingFor = []string{"healer"}
-	sel = b.joinModal(p, lfg.Profile{ClassID: "gladiator", RoleID: "tank"}, i18n.English).Components[0].(discordgo.Label).Component.(modalSelect)
+	sel = b.joinModal(p, lfg.Profile{ClassID: "gladiator", RoleID: "tank"}, false, i18n.English).Components[0].(discordgo.Label).Component.(modalSelect)
 	for _, o := range sel.Options {
 		if o.Default {
 			t.Errorf("%s pre-selected on a healer-only post", o.Value)

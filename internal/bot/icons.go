@@ -21,6 +21,7 @@ var uiIcons = map[string]string{
 	"🔎": "find", "📊": "stats", "🔗": "link", "📌": "pin", "🌐": "language", "👥": "players", "🏆": "top",
 	"🏠": "server", "⏱️": "timer", "🟢": "open", "📖": "help", "🛠️": "admin", "🔣": "legend", "❔": "unknown",
 	"🏰": "castle", "👹": "boss", "🌌": "portal", "🚩": "flag", "💰": "loot", "⛔": "blocked",
+	"📋": "copy", "📨": "invite",
 }
 
 // iconPrefix marks the interface icons among the uploaded ones, whose ids

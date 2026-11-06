@@ -556,6 +556,24 @@ def blocked(g):  # no entry
     g.rrect((40, 57, 88, 71), 5, cut=True)
 
 
+def copy(g):  # two sheets, the copy in front
+    g.rrect((28, 22, 78, 86), 9, tint=True)
+    g.rrect((44, 38, 102, 108), 13, cut=True)
+    g.rrect((50, 44, 96, 102), 9)
+    g.right(73)
+    for y in (60, 72):
+        g.capsule((60, y), (86, y), 5, cut=True)
+    g.capsule((60, 84), (74, 84), 5, cut=True)
+
+
+def invite(g):  # an envelope
+    g.rrect((24, 36, 104, 94), 10)
+    g.right()
+    g.line([(34, 47), (64, 70), (94, 47)], 7, cut=True)
+    g.capsule((34, 84), (52, 68), 5, cut=True)
+    g.capsule((94, 84), (76, 68), 5, cut=True)
+
+
 def sparkle(g, c, r, tint=False):  # a four-pointed star
     x, y = c
     w = r * 0.28
@@ -592,7 +610,7 @@ ICONS = {
     "help": (NAVY, help_), "admin": (SLATE, admin), "legend": (PURPLE, legend),
     "unknown": (SLATE, unknown, "circle"),
     "castle": (NAVY, castle), "boss": (RED, boss), "portal": (PURPLE, portal), "flag": (ORANGE, flag),
-    "loot": (GOLD, loot), "blocked": (RED, blocked),
+    "loot": (GOLD, loot), "blocked": (RED, blocked), "copy": (PURPLE, copy), "invite": (SKY, invite),
 }
 
 # Game icons sit next to the role and class icons in internal/emoji/images,
