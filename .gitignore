@@ -2,3 +2,4 @@
 data/
 *.exe
 /aion2bot
+__pycache__/
