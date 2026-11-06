@@ -21,19 +21,25 @@ const (
 // MaxApplicants keeps the leader's accept menu within Discord's 25-option limit.
 const MaxApplicants = 25
 
+// MaxInvites keeps the open invitations of a post, and the leader's menu to
+// withdraw them, within the same limit.
+const MaxInvites = 25
+
 var (
-	ErrNotFound      = errors.New("post not found")
-	ErrNotOpen       = errors.New("post is not open")
-	ErrIsLeader      = errors.New("user is the post leader")
-	ErrAlreadyJoined = errors.New("user already joined")
-	ErrNotInParty    = errors.New("user is not on this post")
-	ErrTooManyJoined = errors.New("too many applicants")
-	ErrTooManyPosts  = errors.New("leader has too many open posts")
-	ErrGearScore     = errors.New("gear score below the post's requirement")
-	ErrStillOpen     = errors.New("post has not ended")
-	ErrPartyTooBig   = errors.New("party doesn't fit the dungeon")
-	ErrNotRally      = errors.New("post is not a rally")
-	ErrNothingWanted = errors.New("post must look for someone")
+	ErrNotFound       = errors.New("post not found")
+	ErrNotOpen        = errors.New("post is not open")
+	ErrIsLeader       = errors.New("user is the post leader")
+	ErrAlreadyJoined  = errors.New("user already joined")
+	ErrNotInParty     = errors.New("user is not on this post")
+	ErrTooManyJoined  = errors.New("too many applicants")
+	ErrTooManyPosts   = errors.New("leader has too many open posts")
+	ErrGearScore      = errors.New("gear score below the post's requirement")
+	ErrStillOpen      = errors.New("post has not ended")
+	ErrPartyTooBig    = errors.New("party doesn't fit the dungeon")
+	ErrNotRally       = errors.New("post is not a rally")
+	ErrNothingWanted  = errors.New("post must look for someone")
+	ErrInvitedAlready = errors.New("user is invited already")
+	ErrTooManyInvites = errors.New("too many open invitations")
 )
 
 // GuildConfig is where a server wants LFG posts delivered.
@@ -67,6 +73,17 @@ type MessageRef struct {
 	// Thread is set when the bot started a thread under the card. Discord
 	// gives such a thread the ID of the message it was started from.
 	Thread bool `json:"thread,omitempty"`
+}
+
+// Invite is a player the leader invited to a post. Once they join, they
+// are in the party straight away, whatever the post is looking for and
+// asks for gear score.
+type Invite struct {
+	UserID string `json:"user_id"`
+	Name   string `json:"name"`
+	// GuildID is the Discord server they were invited on, where they
+	// join from unless they join from another.
+	GuildID string `json:"guild_id,omitempty"`
 }
 
 // Webhook is a channel webhook the bot created; it can post in the
@@ -149,6 +166,8 @@ type Post struct {
 	// Hidden lists the Discord servers whose moderators took the post off
 	// their channel; it isn't sent there again.
 	Hidden []string `json:"hidden,omitempty"`
+	// Invites are the players the leader invited who haven't joined yet.
+	Invites []Invite `json:"invites,omitempty"`
 }
 
 func (p *Post) Active() bool { return p.Status == StatusOpen || p.Status == StatusFull }
@@ -162,6 +181,7 @@ func (p *Post) Clone() Post {
 	c.Messages = slices.Clone(p.Messages)
 	c.Pinged = slices.Clone(p.Pinged)
 	c.Hidden = slices.Clone(p.Hidden)
+	c.Invites = slices.Clone(p.Invites)
 	return c
 }
 
@@ -279,8 +299,11 @@ func (p *Post) InGuild(guildID string) bool {
 }
 
 // AddApplicant puts a player on the post: on the list for the leader while
-// the party has room, or among the reserves once it is full.
+// the party has room, or among the reserves once it is full. A player the
+// leader invited goes straight into the party while it has room, whatever
+// their gear score, and their invitation is used up.
 func (p *Post) AddApplicant(pl Player) error {
+	invited := p.IsInvited(pl.UserID)
 	switch {
 	case !p.Active():
 		return ErrNotOpen
@@ -288,21 +311,74 @@ func (p *Post) AddApplicant(pl Player) error {
 		return ErrIsLeader
 	case p.Has(pl.UserID):
 		return ErrAlreadyJoined
-	case p.Crowded():
+	case p.Crowded() && !p.TakesStraightIn(pl.UserID):
 		return ErrTooManyJoined
-	case pl.GS < p.MinGS:
+	case pl.GS < p.MinGS && !invited:
 		return ErrGearScore
 	}
+	p.Uninvite(pl.UserID)
 	switch {
 	case p.Status == StatusFull:
 		p.Reserves = append(p.Reserves, pl)
 	case p.Rally:
 		p.Accepted = append(p.Accepted, pl)
 		p.refreshStatus()
+	case invited:
+		p.Accepted = append(p.Accepted, pl)
+		p.Missing--
+		p.refreshStatus()
 	default:
 		p.Applicants = append(p.Applicants, pl)
 	}
 	return nil
+}
+
+// TakesStraightIn reports whether a player who joins now goes straight
+// into the party: the party has room, and it is a rally, or the leader
+// invited them.
+func (p *Post) TakesStraightIn(userID string) bool {
+	return p.Status == StatusOpen && (p.Rally || p.IsInvited(userID))
+}
+
+// Invite asks a player to join an open post; once they do, they are in
+// the party while it has room.
+func (p *Post) Invite(inv Invite) error {
+	switch {
+	case !p.Active():
+		return ErrNotOpen
+	case inv.UserID == p.LeaderID:
+		return ErrIsLeader
+	case p.Has(inv.UserID):
+		return ErrAlreadyJoined
+	case p.IsInvited(inv.UserID):
+		return ErrInvitedAlready
+	case len(p.Invites) >= MaxInvites:
+		return ErrTooManyInvites
+	}
+	p.Invites = append(p.Invites, inv)
+	return nil
+}
+
+// InviteOf is a player's invitation to the post, if they have one.
+func (p *Post) InviteOf(userID string) (Invite, bool) {
+	i := slices.IndexFunc(p.Invites, func(inv Invite) bool { return inv.UserID == userID })
+	if i < 0 {
+		return Invite{}, false
+	}
+	return p.Invites[i], true
+}
+
+func (p *Post) IsInvited(userID string) bool {
+	_, ok := p.InviteOf(userID)
+	return ok
+}
+
+// Uninvite withdraws a player's invitation and reports whether they had
+// one.
+func (p *Post) Uninvite(userID string) bool {
+	n := len(p.Invites)
+	p.Invites = slices.DeleteFunc(p.Invites, func(inv Invite) bool { return inv.UserID == userID })
+	return len(p.Invites) < n
 }
 
 // Accept moves applicants or reserves into the party until no slots are
@@ -526,6 +602,56 @@ func (p *Post) Reopen(ttl time.Duration, now time.Time) error {
 	}
 	p.refreshStatus()
 	return nil
+}
+
+// CopyWho says who comes along to a copy of a post.
+type CopyWho int
+
+const (
+	// CopyEveryone takes everyone on the post: the party, the players
+	// waiting and the reserves.
+	CopyEveryone CopyWho = iota
+	// CopyParty takes the leader and the players they accepted.
+	CopyParty
+	// CopyNobody takes the leader alone; the slots of the party are open.
+	CopyNobody
+)
+
+// Copy is a new open post like this one, for another start: the same
+// leader, dungeon or Abyss event, mode, size, faction, game server, gear
+// score and whom it is looking for, with the note given. The players who
+// come along keep their places, except those leave reports true for, who
+// are taken off as when they leave: a reserve with their role takes their
+// slot, or it opens again. It expires ttl after its start, or after now
+// for a run without one. The copy has no ID, cards, pings or invitations
+// yet; it works for ended posts too.
+func (p *Post) Copy(who CopyWho, startAt time.Time, note string, ttl time.Duration, now time.Time, leave func(Player) bool) Post {
+	c := p.Clone()
+	c.ID, c.Messages, c.Pinged, c.Hidden, c.Invites = "", nil, nil, nil, nil
+	c.Status, c.CreatedAt, c.ClosedAt, c.FilledAt, c.Revision, c.Reminded = StatusOpen, now, time.Time{}, time.Time{}, 0, false
+	c.StartAt, c.Start, c.Note = startAt, "", note
+	c.ExpiresAt = now.Add(ttl)
+	if startAt.After(now) {
+		c.ExpiresAt = startAt.Add(ttl)
+	}
+	// The players waiting go first, so none of them moves up into a slot
+	// that a player left behind opens.
+	var gone []string
+	for _, pl := range c.Waiting() {
+		if who != CopyEveryone || leave != nil && leave(pl) {
+			gone = append(gone, pl.UserID)
+		}
+	}
+	for _, pl := range c.Accepted {
+		if who == CopyNobody || leave != nil && leave(pl) {
+			gone = append(gone, pl.UserID)
+		}
+	}
+	for _, id := range gone {
+		c.Remove(id)
+	}
+	c.refreshStatus()
+	return c
 }
 
 func (p *Post) Close(status Status, now time.Time) error {

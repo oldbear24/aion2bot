@@ -223,6 +223,8 @@ func (b *Bot) onInteraction(_ *discordgo.Session, ic *discordgo.InteractionCreat
 			err = b.onJoinSubmit(i, postID)
 		} else if ok && action == actEditForm {
 			err = b.onEditSubmit(i, postID)
+		} else if ok && action == actCopyForm {
+			err = b.onCopySubmit(i, postID)
 		}
 	case discordgo.InteractionMessageComponent:
 		data := i.MessageComponentData()

@@ -61,6 +61,12 @@ const (
 	actHide     = "hide"
 	actBlock    = "block"
 	actNetBlock = "netblock"
+	// The leader copies a post to another start (see copy.go), and invites
+	// players to it (see invite.go).
+	actCopy     = "copy"
+	actCopyForm = "copyform"
+	actInvite   = "invite"
+	actUninvite = "uninvite"
 )
 
 // The /lfg panel uses "lfgd:<field>", the /lfg-abyss panel "lfga:<field>".
@@ -287,7 +293,12 @@ func partyFill(d config.Dungeon, p lfg.Post) string {
 // panel passes leaderView to link every player. Players who don't fit in
 // rosterBudget are counted instead.
 func (b *Bot) rosterText(p lfg.Post, viewerGuildID string, leaderView bool, l i18n.Lang) string {
-	room := rosterBudget
+	return b.rosterTextIn(p, viewerGuildID, leaderView, rosterBudget, l)
+}
+
+// rosterTextIn is rosterText in room characters instead of rosterBudget,
+// for a panel whose other texts need more than usual.
+func (b *Bot) rosterTextIn(p lfg.Post, viewerGuildID string, leaderView bool, room int, l i18n.Lang) string {
 	list := func(players []lfg.Player) string {
 		return playerList(players, func(pl lfg.Player) string { return b.memberLine(p, pl, viewerGuildID, leaderView, l) }, &room, l)
 	}
@@ -557,17 +568,22 @@ func detailsSummary(minGS, gameGS int, start, note string, l i18n.Lang) string {
 
 // joinModal asks a player for their class, the role they fill with it, and
 // their gear score. Only combinations the post is looking for are offered,
-// and the player's saved profile is filled in.
-func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
+// and the player's saved profile is filled in. A player the leader invited
+// can bring any of them, and needs no gear score.
+func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, invited bool, l i18n.Lang) modal {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	gs := ""
 	if prof.GS > 0 {
 		gs = strconv.Itoa(prof.GS)
 	}
-	required := p.MinGS > 0
+	required := p.MinGS > 0 && !invited
 	gsHelp := l.T(textFor("join.gs_optional", p.Rally))
 	if required {
 		gsHelp = l.T("join.gs_required", l.GS(p.MinGS))
+	}
+	looking, choiceHelp := p.LookingFor, l.T("join.looking", b.lookingForNames(p.LookingFor, l))
+	if invited {
+		looking, choiceHelp, gsHelp = []string{config.AnyID}, l.T("join.invited_choice"), l.T("join.invited_gs")
 	}
 	title := l.T("join.title", dungeon.Name)
 	if p.Status == lfg.StatusFull {
@@ -579,9 +595,9 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 		Components: []discordgo.MessageComponent{
 			discordgo.Label{
 				Label:       l.T("join.choice"),
-				Description: truncate(l.T("join.looking", b.lookingForNames(p.LookingFor, l)), 100),
+				Description: truncate(choiceHelp, 100),
 				Component: modalSelect{CustomID: "choice", Placeholder: l.T("join.choice_ph"),
-					MinValues: 1, MaxValues: 1, Options: b.choiceOptions(b.game.Choices(p.LookingFor), profileChoice(prof))},
+					MinValues: 1, MaxValues: 1, Options: b.choiceOptions(b.game.Choices(looking), profileChoice(prof))},
 			},
 			discordgo.Label{
 				Label:       l.T("join.gs"),
@@ -610,6 +626,31 @@ func (b *Bot) joinModal(p lfg.Post, prof lfg.Profile, l i18n.Lang) modal {
 
 // managePanel is the leader's private control panel for a post.
 func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
+	return b.managePanelSaying(p, "", l)
+}
+
+// managePanelSaying is the manage panel with a line on what the leader
+// just did. That line and the invitations take their room from the party
+// list, which gives way further if the panel would still be too long for
+// Discord, however busy the post.
+func (b *Bot) managePanelSaying(p lfg.Post, done string, l i18n.Lang) discordgo.MessageComponent {
+	var invites []discordgo.MessageComponent
+	if p.Active() {
+		invites = b.inviteControls(p, l)
+	}
+	room := rosterBudget - b.shownLength(done) - b.shownLength(texts(invites...)...)
+	for {
+		panel := b.manageView(p, done, invites, room, l)
+		over := b.shownLength(texts(panel)...) - maxMessageText
+		if over <= 0 || room <= 0 {
+			return panel
+		}
+		room -= max(over, 100)
+	}
+}
+
+// manageView is the manage panel with the party list in room characters.
+func (b *Bot) manageView(p lfg.Post, done string, invites []discordgo.MessageComponent, room int, l i18n.Lang) discordgo.MessageComponent {
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	head := l.T("manage.title", escape(dungeon.Name))
 	if line := difficultyLine(dungeon, p.ModeID, 0, l); line != "" {
@@ -628,20 +669,26 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 
 	deleteButton := discordgo.Button{CustomID: customID(actDelete, p.ID), Label: l.T("manage.delete"),
 		Style: discordgo.DangerButton, Emoji: emoji("🗑️")}
-	comps := []discordgo.MessageComponent{text(head), text(detailsSummary(p.MinGS, 0, postStart(p, l), p.Note, l)),
-		divider(), text(b.rosterText(p, "", true, l))}
+	copyButton := discordgo.Button{CustomID: customID(actCopy, p.ID), Label: l.T("manage.copy"),
+		Style: discordgo.SecondaryButton, Emoji: emoji("📋")}
+	comps := []discordgo.MessageComponent{text(head), text(detailsSummary(p.MinGS, 0, postStart(p, l), p.Note, l))}
+	if done != "" {
+		comps = append(comps, text(done))
+	}
+	comps = append(comps, divider(), text(b.rosterTextIn(p, "", true, room, l)))
 	if !p.Active() {
 		comps = append(comps,
 			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 				discordgo.Button{CustomID: customID(actReopen, p.ID), Label: l.T("manage.reopen"), Style: discordgo.SuccessButton,
 					Emoji: emoji("🔓")},
+				copyButton,
 				deleteButton,
 			}},
 			text(l.T("manage.disappears", p.ClosedAt.Add(keepEndedPosts).Unix())+"\n"+l.T("manage.ended_reopen")))
 		return container(statusColor(p.Status), comps...)
 	}
 	if p.Rally {
-		return container(statusColor(p.Status), append(comps, b.rallyControls(p, deleteButton, l)...)...)
+		return container(statusColor(p.Status), append(comps, b.rallyControls(p, invites, copyButton, deleteButton, l)...)...)
 	}
 
 	if waiting := p.Waiting(); len(waiting) > 0 && p.Missing > 0 {
@@ -653,6 +700,7 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 			len(all), b.playerOptions(p, all, l)))
 	}
 	comps = append(comps, b.lookingAndHandOver(p, l)...)
+	comps = append(comps, invites...)
 	comps = append(comps,
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.Button{CustomID: customID(actEdit, p.ID), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
@@ -665,6 +713,7 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 				Style: discordgo.SecondaryButton, Disabled: p.Missing >= dungeon.MaxMissing(p.ModeID, b.game.MaxMissing)},
 		}},
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			copyButton,
 			discordgo.Button{CustomID: customID(actClose, p.ID), Label: l.T("manage.close"), Style: discordgo.SecondaryButton,
 				Emoji: emoji("🔒")},
 			deleteButton,
@@ -675,9 +724,10 @@ func (b *Bot) managePanel(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 }
 
 // rallyControls are the leader's controls for an open rally: remove
-// players, change the group size, and the buttons. Nobody waits to be
-// accepted, as players join straight in.
-func (b *Bot) rallyControls(p lfg.Post, deleteButton discordgo.Button, l i18n.Lang) []discordgo.MessageComponent {
+// players, change the group size, invite players, and the buttons. Nobody
+// waits to be accepted, as players join straight in.
+func (b *Bot) rallyControls(p lfg.Post, invites []discordgo.MessageComponent, copyButton, deleteButton discordgo.Button,
+	l i18n.Lang) []discordgo.MessageComponent {
 	var comps []discordgo.MessageComponent
 	// The menu holds 25 players. In a bigger rally it offers the latest to
 	// join, the likeliest to be removed.
@@ -686,14 +736,17 @@ func (b *Bot) rallyControls(p lfg.Post, deleteButton discordgo.Button, l i18n.La
 		comps = append(comps, selectRow(customID(actKick, p.ID), l.T("manage.abyss_kick_ph"), len(all), b.playerOptions(p, all, l)))
 	}
 	comps = append(comps, b.lookingAndHandOver(p, l)...)
-	return append(comps,
+	comps = append(comps,
 		text(l.T("draft.size")),
-		selectRow(customID(actSize, p.ID), l.T("draft.size_ph"), 1, sizeOptions(p.Size, len(p.Party()), l)),
+		selectRow(customID(actSize, p.ID), l.T("draft.size_ph"), 1, sizeOptions(p.Size, len(p.Party()), l)))
+	comps = append(comps, invites...)
+	return append(comps,
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			discordgo.Button{CustomID: customID(actEdit, p.ID), Label: l.T("draft.details"), Style: discordgo.SecondaryButton,
 				Emoji: emoji("✏️")},
 			discordgo.Button{CustomID: customID(actMove, p.ID), Label: l.T("manage.abyss_move"), Style: discordgo.SecondaryButton,
 				Emoji: emoji("🗺️")},
+			copyButton,
 			discordgo.Button{CustomID: customID(actClose, p.ID), Label: l.T("manage.close"), Style: discordgo.SecondaryButton,
 				Emoji: emoji("🔒")},
 			deleteButton,
@@ -1061,6 +1114,39 @@ func container(color int, comps ...discordgo.MessageComponent) discordgo.Contain
 }
 
 func text(s string) discordgo.TextDisplay { return discordgo.TextDisplay{Content: s} }
+
+// maxMessageText is Discord's limit for all the text in a Components V2
+// message.
+const maxMessageText = 4000
+
+// texts are the contents of every text display in comps, nested ones too.
+func texts(comps ...discordgo.MessageComponent) []string {
+	var out []string
+	for _, c := range comps {
+		switch v := c.(type) {
+		case discordgo.TextDisplay:
+			out = append(out, v.Content)
+		case discordgo.Container:
+			out = append(out, texts(v.Components...)...)
+		case discordgo.Section:
+			out = append(out, texts(v.Components...)...)
+		}
+	}
+	return out
+}
+
+// shownLength is how many characters the strings take once their emojis
+// are swapped for the bot's icons, which are far longer.
+func (b *Bot) shownLength(strs ...string) int {
+	n := 0
+	for _, s := range strs {
+		if b.icons.text != nil {
+			s = b.icons.text.Replace(s)
+		}
+		n += utf8.RuneCountInString(s)
+	}
+	return n
+}
 
 func divider() discordgo.Separator {
 	on, size := true, discordgo.SeparatorSpacingSizeSmall

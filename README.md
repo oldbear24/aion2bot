@@ -8,7 +8,8 @@ For Abyss events and invasions, `/lfg-abyss` posts an open rally that players jo
 It uses Discord's new components:
 
 - **Components V2 messages** (Container, Section, Text Display, Separator): the `/lfg` panel, the post card, the manage panel.
-- **Modals with select menus** (Label component): the join form, `/profile`, and the gear score, time & note form.
+- **Modals with select menus** (Label component): the join form, `/profile`, the gear score, time & note form, and the form that copies a run to a new date.
+- **User select**: the member picker the leader invites players with, in **Manage**.
 
 ## How it works
 
@@ -47,8 +48,8 @@ It uses Discord's new components:
    faction and game server from `/profile` fit, soonest start first, with a menu to join one. `/lfg-notify` sends them a DM with a link when a new post fits:
    they pick the dungeons and what they play (one or more role and class pairs), and runs their profile's GS, faction or server don't fit are skipped.
    Alerts count posts that reach the server they were set up on.
-   `/lfg-mine` lists a player's own runs: those they lead (with **Manage**), those they're on, waiting for the leader or a reserve on (with **Leave**),
-   and those they led that ended in the last 24 hours, which they can still reopen.
+   `/lfg-mine` lists a player's own runs: those they lead (with **Manage**), those they're invited to (with **Join**), those they're on, waiting for the leader or a reserve on (with **Leave**),
+   and those they led that ended in the last 24 hours, which they can still reopen or copy.
 5. **Join.** Players click **Join**, pick their role and class (only combinations the post asks for) and enter their gear score and in-game character name.
    The form also asks for their faction, and for a rally's game server, when their profile doesn't already fit: on an alt, or before they saved them.
    A player of another faction, or from another server for a rally, can't join.
@@ -73,6 +74,20 @@ It uses Discord's new components:
      The cards and the thread names follow, and the threads get a note.
    - **Reopen** puts a closed or expired post back up, with everyone who was on it, until it's deleted 24 hours after it ended.
      **Manage** stays on the card of an ended post for this. A reopened post counts towards `max_runs_per_leader` again, and gets `post_ttl_hours` more if it had expired.
+   - **Copy to a new date** (📋) posts the run again for another start, open or ended, typically the same time next week: the form offers the start a week later,
+     at the same time of day in the leader's time zone (or empty for a run without a start), and the note. Its menu picks who comes along:
+     **everyone on it** (the party, the players waiting and the reserves, each in their place), **only the party**, or **nobody**, which opens the party's slots again.
+     The copy is a new post on every linked server, with the same dungeon, difficulty, gear score, faction, game server, size and whom it's looking for;
+     the old post stays as it is. Everyone who comes along is pinged in the thread under the copy, on the server they joined from (50 to a message),
+     or gets a DM where that thread can't be reached, with a **Leave** button for those who can't make it. The party counts as pinged for the copy;
+     the players waiting and the reserves are pinged again once they get into the party. Players blocked on the server they joined from, or on the post's,
+     stay behind, and their slots open as when anyone leaves. A copy that's full already doesn't ping the servers' roles or send `/lfg-notify` alerts.
+     It counts towards `max_runs_per_leader` like any run.
+   - **Invite players** (📨) with the member picker, up to 10 at once and 25 open invitations: each is pinged in the thread under the post on the server
+     they were invited on, or gets a DM, with a **Join** button. Once they join, from there, the card, `/lfg-find` or `/lfg-mine`, they're in the party
+     straight away while it has room, with any role and class and whatever the post asks for gear score; once it's full, they join as reserves.
+     Their faction, a rally's game server and blocks still count. The leader is pinged for the first player as usual, and sees the open invitations
+     in **Manage**, where they can withdraw them. The picker offers the members of the server **Manage** was opened on; players elsewhere can still join from the card.
 7. **Threads.** Each copy of a post gets a thread on its server as soon as it goes up, so anyone can ask the leader about the run, and the bot keeps them alike:
    - Its notes go to every thread, in each server's language, as small cards like the post: a heading, who it's for, then the details
      (the player who joined with a ⚙️ **Manage** button, the role and start for an accepted player, the party by role in the reminder). Everyone is pinged **once** per run, on the server they posted or joined from:
@@ -163,7 +178,7 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | `/lfg-abyss` | everyone | Opens the panel to gather players for an Abyss event or invasion: an open rally, with or without a size limit |
 | `/lfg-find [dungeon]` | everyone | Lists the open runs (dungeons and Abyss rallies) you can join with your class and gear score, with a menu to join one |
 | `/lfg-notify` | everyone | Sets up a DM for new runs: the dungeons you want and what you play |
-| `/lfg-mine` | everyone | Lists the runs you lead or joined, with **Manage** and **Leave**, and your ended runs you can still reopen, only to you |
+| `/lfg-mine` | everyone | Lists the runs you lead or joined, with **Manage** and **Leave**, the runs you're invited to, with **Join**, and your ended runs you can still reopen or copy, only to you |
 | `/lfg-stats [days]` | everyone | Shows runs posted and filled, the most popular dungeons and the busiest servers of the network |
 | `/profile` | everyone | Shows and changes your main role, class, faction, character name, game server, gear score, time zone and whether you want reminders |
 | `/help` | everyone | Shows how to use the bot, only to you (members with Manage Server also see the admin commands) |

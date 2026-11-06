@@ -60,6 +60,12 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 		return b.onBlock(i, p, values, action == actNetBlock)
 	case actLooking:
 		return b.onLookingFor(i, p, values)
+	case actCopy:
+		return b.showModal(i, b.copyModal(p, b.timeZone(userID, i.Locale), l))
+	case actInvite:
+		return b.onInvite(i, p, values)
+	case actUninvite:
+		return b.onUninvite(i, p, values)
 	case actHandTo:
 		if !p.Active() {
 			return b.update(i, b.panelFor(i, p))
@@ -233,18 +239,31 @@ func (b *Bot) onJoin(i *discordgo.Interaction, p lfg.Post, userID string) error 
 		err = lfg.ErrAlreadyJoined
 	case !p.Active():
 		err = lfg.ErrNotOpen
-	case p.Crowded():
+	case p.Crowded() && !p.TakesStraightIn(userID):
 		err = lfg.ErrTooManyJoined
 	}
 	if err != nil {
 		return b.reply(i, notice(colorClosed, errorText(err, lang(i))))
 	}
-	if b.blockedFrom(p, userID, i.GuildID) {
+	if b.blockedFrom(p, userID, joinGuild(p, userID, i.GuildID)) {
 		return b.reply(i, notice(colorClosed, lang(i).T("blocked.join")))
 	}
 	prof, _ := b.store.Profile(userID)
-	return b.showModal(i, b.joinModal(p, prof, lang(i)))
+	return b.showModal(i, b.joinModal(p, prof, p.IsInvited(userID), lang(i)))
 }
+
+// joinGuild is the server a player joins a post from: the one they clicked
+// on, or for an invitation answered by DM, the one they were invited on.
+func joinGuild(p lfg.Post, userID, guildID string) string {
+	if inv, ok := p.InviteOf(userID); ok && guildID == "" {
+		return inv.GuildID
+	}
+	return guildID
+}
+
+// errChoiceGone rejects a join as a role or class the post no longer
+// takes.
+var errChoiceGone = errors.New("choice no longer wanted")
 
 // blockedFrom reports whether a player may not join a post: they are
 // blocked on the server they join from, or on the post's own server.
@@ -254,7 +273,8 @@ func (b *Bot) blockedFrom(p lfg.Post, userID, guildID string) bool {
 
 // onJoinSubmit adds the player once they sent their role, class, gear
 // score and character name: on the list for the leader, or as a reserve
-// when the party is full.
+// when the party is full. A player the leader invited goes straight into
+// the party.
 func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	userID, name := interactionUser(i)
 	l := lang(i)
@@ -274,12 +294,13 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	}
 
 	p, ok := b.store.Post(postID)
+	guildID := joinGuild(p, userID, i.GuildID)
 	switch {
 	case !ok:
 		return b.reply(i, notice(colorClosed, errorText(lfg.ErrNotFound, l)))
-	case b.blockedFrom(p, userID, i.GuildID):
+	case b.blockedFrom(p, userID, guildID):
 		return b.reply(i, notice(colorClosed, l.T("blocked.join")))
-	case !b.game.Fits(p.LookingFor, classID, roleID):
+	case !b.game.Fits(joinLooking(p, userID), classID, roleID):
 		return b.reply(i, notice(colorClosed, l.T("join.class_gone")))
 	case gsErr != nil:
 		return b.reply(i, notice(colorClosed, l.T("join.bad_gs")))
@@ -290,16 +311,28 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	}
 
 	pl := lfg.Player{UserID: userID, Name: name, ClassID: classID, RoleID: roleID, GS: gs,
-		GuildID: i.GuildID, GuildName: b.guildName(i.GuildID), Char: cleanChar(first(values["char"]))}
+		GuildID: guildID, GuildName: b.guildName(guildID), Char: cleanChar(first(values["char"]))}
 	var pingLeader bool
 	p, err := b.store.UpdatePost(postID, func(p *lfg.Post) error {
+		// The leader may have withdrawn the invitation meanwhile.
+		if !b.game.Fits(joinLooking(*p, userID), classID, roleID) {
+			return errChoiceGone
+		}
+		invited := p.IsInvited(userID)
 		if err := p.AddApplicant(pl); err != nil {
 			return err
 		}
 		pingLeader = p.MarkPinged(p.LeaderID)
+		// Their invitation told them about the run already.
+		if invited && p.InParty(userID) {
+			p.MarkPinged(userID)
+		}
 		return nil
 	})
-	if errors.Is(err, lfg.ErrGearScore) {
+	switch {
+	case errors.Is(err, errChoiceGone):
+		return b.reply(i, notice(colorClosed, l.T("join.class_gone")))
+	case errors.Is(err, lfg.ErrGearScore):
 		return b.reply(i, notice(colorClosed, l.T("join.gs_low", l.GS(p.MinGS), l.GS(gs))))
 	}
 	if err != nil {
@@ -308,16 +341,20 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 	b.scheduleSync(p.ID)
 	b.rememberJoin(pl, faction, server)
 
-	// A rally takes the player straight in, so they hear whom to look for
-	// in game right away.
+	// A rally takes the player straight in, and so does a party they were
+	// invited to, so they hear whom to look for in game right away.
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	reserve := p.IsReserve(userID)
-	if reserve {
+	switch {
+	case reserve:
 		err = b.reply(i, notice(colorFull, l.T(textFor("join.reserve", p.Rally), dungeon.Name, b.bringing(p, pl), len(p.Reserves))))
-	} else if p.Rally {
+	case p.Rally:
 		err = b.reply(i, notice(colorOpen, l.T("join.abyss_done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))+
 			leaderCharLine(p, l)))
-	} else {
+	case p.InParty(userID):
+		err = b.reply(i, notice(colorOpen, l.T("join.invited_done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))+
+			leaderCharLine(p, l)))
+	default:
 		err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))))
 	}
 
@@ -331,8 +368,11 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 		}
 		if !b.announce(p, map[string][]string{p.GuildID: {p.LeaderID}}, true, note)[p.GuildID] {
 			ll := b.guildLang(p.GuildID)
-			b.dm(p.LeaderID, container(colorOpen,
-				text(ll.T(textFor("dm.leader", p.Rally), dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
+			key := textFor("dm.leader", p.Rally)
+			if !p.Rally && p.InParty(userID) {
+				key = "dm.invite_joined"
+			}
+			b.dm(p.LeaderID, container(colorOpen, text(ll.T(key, dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
 		}
 	}
 	if p, ok := b.store.Post(p.ID); ok {

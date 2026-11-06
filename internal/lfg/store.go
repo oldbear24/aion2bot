@@ -165,7 +165,7 @@ var postColumns = []string{
 	"id", "leader_id", "leader_name", "guild_id", "guild_name", "dungeon_id", "mode_id", "min_gs", "looking_for",
 	"missing", "start", "note", "status", "created_at", "expires_at", "closed_at", "revision", "pinged", "start_at",
 	"leader_char", "filled_at", "reminded", "leader_class", "leader_role", "leader_gs", "rally", "size",
-	"faction", "server", "hidden",
+	"faction", "server", "hidden", "invites",
 }
 
 var (
@@ -238,6 +238,7 @@ var migrations = []string{
 	`ALTER TABLE posts ADD COLUMN hidden TEXT NOT NULL DEFAULT '[]'`,
 	`ALTER TABLE profiles ADD COLUMN faction TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE profiles ADD COLUMN server TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE posts ADD COLUMN invites TEXT NOT NULL DEFAULT '[]'`,
 }
 
 var addColumn = regexp.MustCompile(`^ALTER TABLE (\w+) ADD COLUMN (\w+) `)
@@ -369,10 +370,12 @@ func (s *Store) ShownPosts() []Post {
 }
 
 // PostsOf lists the posts still shown that a player leads or is on, in any
-// way: in the party, waiting for the leader or as a reserve.
+// way: in the party, waiting for the leader or as a reserve, and those they
+// are invited to.
 func (s *Store) PostsOf(userID string) []Post {
 	return s.postsWhere(`SELECT id FROM posts WHERE leader_id = ? OR id IN (SELECT post_id FROM players WHERE user_id = ?)
-		ORDER BY created_at, id`, userID, userID)
+		OR EXISTS (SELECT 1 FROM json_each(posts.invites) WHERE json_extract(value, '$.user_id') = ?)
+		ORDER BY created_at, id`, userID, userID, userID)
 }
 
 func (s *Store) postsWhere(query string, args ...any) []Post {
@@ -902,13 +905,13 @@ type querier interface {
 
 func loadPost(q querier, id string) (*Post, error) {
 	var p Post
-	var lookingFor, pinged, hidden string
+	var lookingFor, pinged, hidden, invites string
 	var created, expires, closed, startAt, filled int64
 	err := q.QueryRow(selectPost+" WHERE id = ?", id).Scan(
 		&p.ID, &p.LeaderID, &p.LeaderName, &p.GuildID, &p.GuildName, &p.DungeonID, &p.ModeID, &p.MinGS, &lookingFor,
 		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt,
 		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS, &p.Rally, &p.Size,
-		&p.Faction, &p.Server, &hidden)
+		&p.Faction, &p.Server, &hidden, &invites)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -923,6 +926,9 @@ func loadPost(q querier, id string) (*Post, error) {
 	}
 	if err := json.Unmarshal([]byte(hidden), &p.Hidden); err != nil {
 		return nil, fmt.Errorf("post %s hidden: %w", id, err)
+	}
+	if err := json.Unmarshal([]byte(invites), &p.Invites); err != nil {
+		return nil, fmt.Errorf("post %s invites: %w", id, err)
 	}
 	p.CreatedAt, p.ExpiresAt, p.ClosedAt = fromMillis(created), fromMillis(expires), fromMillis(closed)
 	p.StartAt, p.FilledAt = fromMillis(startAt), fromMillis(filled)
@@ -984,11 +990,15 @@ func writePost(tx *sql.Tx, p *Post) error {
 	if err != nil {
 		return err
 	}
+	invites, err := json.Marshal(append([]Invite{}, p.Invites...))
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(upsertPost,
 		p.ID, p.LeaderID, p.LeaderName, p.GuildID, p.GuildName, p.DungeonID, p.ModeID, p.MinGS, string(lookingFor),
 		p.Missing, p.Start, p.Note, p.Status, millis(p.CreatedAt), millis(p.ExpiresAt), millis(p.ClosedAt), p.Revision,
 		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded, p.LeaderClass, p.LeaderRole,
-		p.LeaderGS, p.Rally, p.Size, p.Faction, p.Server, string(hidden))
+		p.LeaderGS, p.Rally, p.Size, p.Faction, p.Server, string(hidden), string(invites))
 	if err != nil {
 		return err
 	}

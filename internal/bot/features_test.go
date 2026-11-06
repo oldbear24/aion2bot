@@ -168,7 +168,7 @@ func TestProfileAsksForCharacterAndReminders(t *testing.T) {
 		}
 	}
 
-	join := b.joinModal(busyPost(b), lfg.Profile{Char: "Lunaria"}, i18n.English)
+	join := b.joinModal(busyPost(b), lfg.Profile{Char: "Lunaria"}, false, i18n.English)
 	if ti := join.Components[2].(discordgo.Label).Component.(discordgo.TextInput); ti.CustomID != "char" || ti.Value != "Lunaria" {
 		t.Errorf("join form character: %+v", ti)
 	}
@@ -237,7 +237,7 @@ func TestFactionAndServer(t *testing.T) {
 		{"rally, fitting profile", r, lfg.Profile{Faction: "elyos", Server: "SIEL"}, []string{"choice", "gs", "char"}},
 		{"rally, nothing saved", r, lfg.Profile{}, []string{"choice", "gs", "char", "faction", "server"}},
 	} {
-		if got := ids(b.joinModal(c.post, c.prof, i18n.English)); !slices.Equal(got, c.want) {
+		if got := ids(b.joinModal(c.post, c.prof, false, i18n.English)); !slices.Equal(got, c.want) {
 			t.Errorf("%s: join form asks %v, want %v", c.name, got, c.want)
 		}
 	}

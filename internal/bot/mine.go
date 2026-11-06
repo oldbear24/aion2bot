@@ -15,31 +15,34 @@ import (
 const mineLimit = 8
 
 // /lfg-mine lists a player's runs: those they lead, with Manage, those
-// they are on, with Leave, and those they led that ended, which they can
-// still reopen.
+// they are invited to, with Join, those they are on, with Leave, and those
+// they led that ended, which they can still reopen.
 func (b *Bot) cmdMine(i *discordgo.Interaction) error {
 	userID, _ := interactionUser(i)
 	return b.reply(i, b.minePanel(b.store.PostsOf(userID), userID, i.GuildID, lang(i)))
 }
 
 func (b *Bot) minePanel(posts []lfg.Post, userID, guildID string, l i18n.Lang) discordgo.MessageComponent {
-	var leading, joined, ended []lfg.Post
+	var leading, invited, joined, ended []lfg.Post
 	for _, p := range posts {
 		switch {
 		case p.LeaderID == userID && p.Active():
 			leading = append(leading, p)
 		case p.LeaderID == userID:
 			ended = append(ended, p)
-		case p.Active():
+		case p.Active() && p.Has(userID):
 			joined = append(joined, p)
+		case p.Active() && p.IsInvited(userID):
+			invited = append(invited, p)
 		}
 	}
 	now := time.Now()
 	sortRuns(leading, now)
+	sortRuns(invited, now)
 	sortRuns(joined, now)
 
 	comps := []discordgo.MessageComponent{text(l.T("mine.title"))}
-	if len(leading)+len(joined)+len(ended) == 0 {
+	if len(leading)+len(invited)+len(joined)+len(ended) == 0 {
 		return container(colorClosed, append(comps, text(l.T("mine.none", b.cmd("lfg-find"), b.cmd("lfg"))))...)
 	}
 	room := mineLimit
@@ -59,6 +62,9 @@ func (b *Bot) minePanel(posts []lfg.Post, userID, guildID string, l i18n.Lang) d
 	}
 	section(l.T("mine.leading", b.game.LeaderEmoji, len(leading)), leading, func(p lfg.Post) discordgo.MessageComponent {
 		return b.mineEntry(p, guildID, b.shortStatus(p, l), manageButton(p.ID, false, l), l)
+	})
+	section(l.T("mine.invited", len(invited)), invited, func(p lfg.Post) discordgo.MessageComponent {
+		return b.mineEntry(p, guildID, l.T("mine.invited_standing")+" · "+b.shortStatus(p, l), joinButton(p.ID, l), l)
 	})
 	section(l.T("mine.joined", len(joined)), joined, func(p lfg.Post) discordgo.MessageComponent {
 		leave := discordgo.Button{CustomID: customID(actLeave, p.ID), Label: l.T("card.leave"), Style: discordgo.SecondaryButton}
