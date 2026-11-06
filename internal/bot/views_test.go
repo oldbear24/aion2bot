@@ -22,33 +22,47 @@ const (
 	maxTextLength = 4000
 )
 
+// testBot has every slash command registered, as in production, where each
+// mention, "</lfg-find:1234567890123456789>", is about 20 characters
+// longer than the "`/lfg-find`" shown before the commands are registered.
 func testBot(t *testing.T) *Bot {
 	t.Helper()
 	game, err := config.LoadGame("../../game.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Bot{game: game}
+	b := &Bot{game: game, commandIDs: map[string]string{}}
+	for _, c := range commandList(game) {
+		b.commandIDs[c.Name] = "1234567890123456789"
+	}
+	return b
 }
 
 // iconBot uses application emojis for roles and classes, as in production,
-// where each is far longer than the emoji in game.json.
+// where each is far longer than the emoji in game.json. They're written as
+// emoji.Sync names them: "lfg_", the id and a hash of the image. Like
+// production, it also has the interface icons, so panels that make room
+// for them count them in.
 func iconBot(t *testing.T) *Bot {
 	b := testBot(t)
 	icons := map[string]string{}
 	for _, r := range b.game.Roles {
-		icons[r.ID] = "<:" + r.ID + ":1234567890123456789>"
+		icons[r.ID] = gameIcon(r.ID)
 	}
 	for _, c := range b.game.Classes {
-		icons[c.ID] = "<:" + c.ID + ":1234567890123456789>"
+		icons[c.ID] = gameIcon(c.ID)
 	}
 	for _, f := range b.game.Factions {
-		icons[f.ID] = "<:" + f.ID + ":1234567890123456789>"
+		icons[f.ID] = gameIcon(f.ID)
 	}
-	icons["leader"] = "<:leader:1234567890123456789>"
+	icons["leader"] = gameIcon("leader")
 	b.game.UseIcons(icons)
+	b.icons = testIcons
 	return b
 }
+
+// gameIcon is how a message shows the icon of a role, class or faction.
+func gameIcon(id string) string { return "<:lfg_" + id + "_a1b2c3:1234567890123456789>" }
 
 // busyPost is the largest post the bot allows, with long names everywhere.
 func busyPost(b *Bot) lfg.Post {
@@ -245,8 +259,6 @@ func TestOtherPanelsFitDiscordLimits(t *testing.T) {
 			"hand over":      b.handOverPanel(p, p.Accepted[0].UserID, true, l),
 			"mod hand over":  b.handOverPanel(p, p.Accepted[0].UserID, false, l),
 			"too many runs":  b.tooManyRuns(open, l),
-			"help":           b.helpPanel(l, false),
-			"admin help":     b.helpPanel(l, true),
 			"legend":         iconBot(t).legendPanel(l),
 		} {
 			if count, textLen := measure(t, panel); count > maxComponents || textLen > maxTextLength {
@@ -658,7 +670,7 @@ func TestLeaderIsInTheParty(t *testing.T) {
 	// With the bundled icons, the leader wears the custom crown.
 	b = iconBot(t)
 	roster = b.rosterText(p, "", true, i18n.English)
-	if want := " <:leader:1234567890123456789> **Lea**"; !strings.Contains(roster, want) || strings.Contains(roster, "👑") {
+	if want := " " + gameIcon("leader") + " **Lea**"; !strings.Contains(roster, want) || strings.Contains(roster, "👑") {
 		t.Errorf("roster misses %q:\n%s", want, roster)
 	}
 }
@@ -773,30 +785,119 @@ func TestDungeonPartySizeLimitsMissing(t *testing.T) {
 	}
 }
 
+// helpSent has a member with the given permissions use /help, or
+// /help-public, with Discord in language l, and returns the messages the
+// bot sent, as Discord got them: the answer, then any follow-ups. Every
+// command has an ID and every icon is in place, as in production.
+func helpSent(t *testing.T, public bool, l i18n.Lang, perms int64) []discordgo.Message {
+	t.Helper()
+	f := &fakeDiscord{}
+	b := goneBot(t, f)
+	b.game, b.icons = iconBot(t).game, testIcons
+	name := "help"
+	if public {
+		name = "help-public"
+	}
+	raw := fmt.Sprintf(`{"id":"9","application_id":"8","type":2,"token":"tok","guild_id":"g1","channel_id":"c1","locale":%q,
+		"member":{"user":{"id":"someone","username":"someone"},"permissions":"%d"},
+		"data":{"id":"1","name":%q,"type":1}}`, l, perms, name)
+	var ic discordgo.InteractionCreate
+	if err := json.Unmarshal([]byte(raw), &ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.cmdHelp(ic.Interaction, public); err != nil {
+		t.Fatal(err)
+	}
+	var sent []discordgo.Message
+	for n, call := range f.calls {
+		var m discordgo.Message
+		var err error
+		switch call {
+		case callback:
+			err = json.Unmarshal([]byte(f.bodies[n]), &struct{ Data *discordgo.Message }{&m})
+		case "POST /webhooks/8/tok":
+			err = json.Unmarshal([]byte(f.bodies[n]), &m)
+		default:
+			t.Fatalf("/help made %s", call)
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", call, err)
+		}
+		sent = append(sent, m)
+	}
+	return sent
+}
+
+// /help and /help-public are measured as Discord gets them, with every
+// command mention and icon in place: an admin's /help is the guide, then
+// the admin section, each a message within the limits in every language.
 func TestHelpFitsDiscordLimits(t *testing.T) {
+	for _, l := range i18n.Langs {
+		for _, public := range []bool{false, true} {
+			sent := helpSent(t, public, l, discordgo.PermissionManageGuild)
+			if len(sent) == 0 {
+				t.Fatalf("%s: no help sent", l)
+			}
+			for n, m := range sent {
+				if count, textLen := measure(t, m.Components...); count > maxComponents || textLen > maxTextLength {
+					t.Errorf("%s help (public %v), message %d: %d components, %d characters", l, public, n+1, count, textLen)
+				}
+				raw := jsonOf(t, m.Components)
+				if !strings.Contains(raw, "</lfg") {
+					t.Errorf("%s help (public %v), message %d, sent without command mentions:\n%s", l, public, n+1, raw)
+				}
+				for e := range testIcons.byKey {
+					if strings.Contains(raw, e) {
+						t.Errorf("%s help (public %v), message %d, sent with %s instead of its icon", l, public, n+1, e)
+					}
+				}
+			}
+		}
+	}
+
 	b := testBot(t)
 	b.commandIDs = map[string]string{"lfg": "111", "lfg-network": "222"}
-	panel := b.helpPanel(i18n.English, true)
-	count, textLen := measure(t, panel)
-	if count > maxComponents || textLen > maxTextLength {
-		t.Errorf("help: %d components, %d characters", count, textLen)
-	}
 	if b.cmd("lfg") != "</lfg:111>" || b.cmd("lfg-network join") != "</lfg-network join:222>" || b.cmd("profile") != "`/profile`" {
 		t.Errorf("command mentions: %s %s %s", b.cmd("lfg"), b.cmd("lfg-network join"), b.cmd("profile"))
 	}
 }
 
+// Only server admins asking privately get the admin section, in a second
+// private message; /help-public posts the guide alone, for everyone.
 func TestOnlyAdminsSeeAdminCommands(t *testing.T) {
-	b := testBot(t)
 	for _, l := range i18n.Langs {
-		admin, _ := json.Marshal(b.helpPanel(l, true))
-		player, _ := json.Marshal(b.helpPanel(l, false))
-		for _, cmd := range []string{"/lfg-setup", "/lfg-check", "/lfg-network", "/lfg-disable", "/help-public"} {
-			if !strings.Contains(string(admin), cmd) {
-				t.Errorf("%s admin help lacks %s", l, cmd)
+		for _, c := range []struct {
+			name   string
+			public bool
+			perms  int64
+			admin  bool
+		}{
+			{"player", false, discordgo.PermissionSendMessages, false},
+			{"admin", false, discordgo.PermissionManageGuild, true},
+			{"admin posting it", true, discordgo.PermissionManageGuild, false},
+		} {
+			sent := helpSent(t, c.public, l, c.perms)
+			want := 1
+			if c.admin {
+				want = 2
 			}
-			if strings.Contains(string(player), cmd) {
-				t.Errorf("%s player help shows %s", l, cmd)
+			if len(sent) != want {
+				t.Errorf("%s %s: %d messages, want %d", l, c.name, len(sent), want)
+				continue
+			}
+			for n, m := range sent {
+				if private := m.Flags&discordgo.MessageFlagsEphemeral != 0; private == c.public {
+					t.Errorf("%s %s: message %d private: %v", l, c.name, n+1, private)
+				}
+			}
+			guide := jsonOf(t, sent[0].Components)
+			for _, cmd := range []string{"/lfg-setup", "/lfg-check", "/lfg-network", "/lfg-disable", "/help-public"} {
+				if strings.Contains(guide, cmd) {
+					t.Errorf("%s %s: the guide shows %s", l, c.name, cmd)
+				}
+				if c.admin && !strings.Contains(jsonOf(t, sent[1].Components), cmd) {
+					t.Errorf("%s %s: the admin section lacks %s", l, c.name, cmd)
+				}
 			}
 		}
 	}

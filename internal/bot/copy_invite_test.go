@@ -96,9 +96,6 @@ func TestCopyModal(t *testing.T) {
 
 func TestManagePanelCopiesAndInvites(t *testing.T) {
 	b := iconBot(t)
-	// Counted as in production, where the icons are far longer than the
-	// emojis they replace.
-	b.icons = testIcons
 	long := strings.Repeat("W", 40)
 	invites := make([]lfg.Invite, 0, lfg.MaxInvites)
 	for n := range lfg.MaxInvites {

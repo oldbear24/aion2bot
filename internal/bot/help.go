@@ -10,20 +10,22 @@ import (
 
 // /help answers privately in the user's language; /help-public posts the
 // guide in the channel in the server's language. Only server admins asking
-// privately see the admin section.
+// privately get the admin section, as a second message: with every command
+// mention and icon in place, the two together pass the 4,000 characters
+// Discord allows in one.
 func (b *Bot) cmdHelp(i *discordgo.Interaction, public bool) error {
-	l := lang(i)
-	flags := discordgo.MessageFlagsIsComponentsV2
 	if public {
-		l = b.guildLang(i.GuildID)
-	} else {
-		flags |= discordgo.MessageFlagsEphemeral
+		return b.respond(i, discordgo.InteractionResponseChannelMessageWithSource, v2Message{
+			Components:      b.icons.apply([]discordgo.MessageComponent{b.helpPanel(b.guildLang(i.GuildID))}),
+			Flags:           discordgo.MessageFlagsIsComponentsV2,
+			AllowedMentions: noMentions,
+		})
 	}
-	return b.respond(i, discordgo.InteractionResponseChannelMessageWithSource, v2Message{
-		Components:      []discordgo.MessageComponent{b.helpPanel(l, !public && managesServer(i))},
-		Flags:           flags,
-		AllowedMentions: noMentions,
-	})
+	l := lang(i)
+	if err := b.reply(i, b.helpPanel(l)); err != nil || !managesServer(i) {
+		return err
+	}
+	return b.followUp(i, b.adminHelpPanel(l))
 }
 
 // managesServer reports whether the user may run the admin commands, which
@@ -33,7 +35,8 @@ func managesServer(i *discordgo.Interaction) bool {
 		i.Member.Permissions&(discordgo.PermissionManageGuild|discordgo.PermissionAdministrator) != 0
 }
 
-func (b *Bot) helpPanel(l i18n.Lang, admin bool) discordgo.MessageComponent {
+// helpPanel is the guide for players.
+func (b *Bot) helpPanel(l i18n.Lang) discordgo.MessageComponent {
 	var roles []string
 	for _, r := range b.game.Roles {
 		roles = append(roles, strings.TrimSpace(r.Emoji+" "+r.Name))
@@ -53,14 +56,15 @@ func (b *Bot) helpPanel(l i18n.Lang, admin bool) discordgo.MessageComponent {
 		}
 		parts = append(parts, divider(), text(l.T("help.abyss", b.cmd("lfg-abyss"), strings.Join(names, ", "))))
 	}
-	if admin {
-		parts = append(parts, divider(),
-			text(l.T("help.admin", b.cmd("lfg-setup"), b.cmd("lfg-check"), b.cmd("lfg-network create"),
-				b.cmd("lfg-network join"), b.cmd("lfg-network info"), b.cmd("lfg-disable"), b.cmd("help-public"),
-				b.cmd("lfg-blocks"))))
-	}
 	parts = append(parts, text(l.T("help.footer", b.cmd("help"), b.cmd("legend"))))
 	return container(colorFull, parts...)
+}
+
+// adminHelpPanel is the guide's section for server admins and moderators.
+func (b *Bot) adminHelpPanel(l i18n.Lang) discordgo.MessageComponent {
+	return container(colorFull, text(l.T("help.admin", b.cmd("lfg-setup"), b.cmd("lfg-check"), b.cmd("lfg-network create"),
+		b.cmd("lfg-network join"), b.cmd("lfg-network info"), b.cmd("lfg-disable"), b.cmd("help-public"),
+		b.cmd("lfg-blocks"))))
 }
 
 // cmd is a clickable mention of a slash command (or subcommand, such as

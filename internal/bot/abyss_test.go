@@ -275,7 +275,7 @@ func TestAbyssEverywhere(t *testing.T) {
 		t.Errorf("alerts for an Abyss event:\n%s", alerts)
 	}
 	for _, l := range i18n.Langs {
-		help := jsonOf(t, b.helpPanel(l, true))
+		help := jsonOf(t, b.helpPanel(l))
 		if !strings.Contains(help, "/lfg-abyss") || !strings.Contains(help, "Artifact Siege, Abyss Boss") {
 			t.Errorf("%s help lacks the Abyss events", l)
 		}

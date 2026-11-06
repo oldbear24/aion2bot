@@ -77,6 +77,17 @@ func (b *Bot) update(i *discordgo.Interaction, comps ...discordgo.MessageCompone
 	})
 }
 
+// followUp sends another private message after the reply to an interaction.
+func (b *Bot) followUp(i *discordgo.Interaction, comps ...discordgo.MessageComponent) error {
+	endpoint := discordgo.EndpointFollowupMessage(i.AppID, i.Token)
+	_, err := b.s.RequestWithBucketID("POST", endpoint, v2Message{
+		Components:      b.icons.apply(comps),
+		Flags:           discordgo.MessageFlagsEphemeral | discordgo.MessageFlagsIsComponentsV2,
+		AllowedMentions: noMentions,
+	}, endpoint)
+	return err
+}
+
 func (b *Bot) showModal(i *discordgo.Interaction, m modal) error {
 	return b.respond(i, discordgo.InteractionResponseModal, m)
 }
