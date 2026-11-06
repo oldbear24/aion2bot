@@ -218,10 +218,10 @@ func (b *Bot) onHandOver(i *discordgo.Interaction, before lfg.Post, userID strin
 	note := func(guildID string, l i18n.Lang) discordgo.MessageComponent {
 		return b.handOverNote(before, p, stay, byGuild, guildID, l)
 	}
-	if !b.announce(p, map[string][]string{p.GuildID: {p.LeaderID}}, true, note)[p.GuildID] {
-		ll := b.guildLang(p.GuildID)
-		b.dm(p.LeaderID, container(colorOpen, text(ll.T("dm.new_leader", b.game.LeaderEmoji, b.runName(p))), manageRow(p.ID, ll)))
-	}
+	b.pingOrDM(p, map[string][]string{p.GuildID: {p.LeaderID}}, note, func(guildID, to string) bool {
+		ll := b.guildLang(guildID)
+		return b.dm(to, container(colorOpen, text(ll.T("dm.new_leader", b.game.LeaderEmoji, b.runName(p))), manageRow(p.ID, ll)))
+	})
 	if !byLeader {
 		b.tellLeader(before, i.GuildID, "dm.mod_handed")
 	}
@@ -358,22 +358,22 @@ func (b *Bot) onJoinSubmit(i *discordgo.Interaction, postID string) error {
 		err = b.reply(i, notice(colorOpen, l.T("join.done", dungeon.Name, b.bringing(p, pl), escape(p.LeaderName))))
 	}
 
-	// The leader is pinged for the first player only, on their own server;
-	// the note shows in the thread on every server, and the card shows the
-	// rest. Everyone who joins is added to the threads.
+	// The leader is pinged for the first player only, on their own server
+	// or by DM; the note shows in the thread on every server, and the card
+	// shows the rest. Everyone who joins is added to the threads.
 	b.learnMembers(p, p.GuildIDs())
 	if pingLeader {
 		note := func(guildID string, l i18n.Lang) discordgo.MessageComponent {
 			return b.joinNote(p, pl, reserve, guildID, l)
 		}
-		if !b.announce(p, map[string][]string{p.GuildID: {p.LeaderID}}, true, note)[p.GuildID] {
-			ll := b.guildLang(p.GuildID)
+		b.pingOrDM(p, map[string][]string{p.GuildID: {p.LeaderID}}, note, func(guildID, to string) bool {
+			ll := b.guildLang(guildID)
 			key := textFor("dm.leader", p.Rally)
 			if !p.Rally && p.InParty(userID) {
 				key = "dm.invite_joined"
 			}
-			b.dm(p.LeaderID, container(colorOpen, text(ll.T(key, dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
-		}
+			return b.dm(to, container(colorOpen, text(ll.T(key, dungeon.Name, b.playerLine(p, pl, ll))), manageRow(p.ID, ll)))
+		})
 	}
 	if p, ok := b.store.Post(p.ID); ok {
 		b.addToThreads(p.Messages, []lfg.Player{pl})
@@ -454,8 +454,8 @@ func (b *Bot) onAccept(i *discordgo.Interaction, p lfg.Post, userIDs []string) e
 }
 
 // welcome pings players who just got into the party, each on the server
-// they joined from; the note shows in the thread on every server, in its
-// language. promoted says they moved up from the reserves.
+// they joined from or by DM; the note shows in the thread on every server,
+// in its language. promoted says they moved up from the reserves.
 func (b *Bot) welcome(p lfg.Post, players []lfg.Player, promoted bool) {
 	if len(players) == 0 {
 		return
@@ -470,11 +470,11 @@ func (b *Bot) welcome(p lfg.Post, players []lfg.Player, promoted bool) {
 		note := func(guildID string, l i18n.Lang) discordgo.MessageComponent {
 			return b.welcomeNote(p, pl, promoted, guildID, l)
 		}
-		if !b.announce(p, map[string][]string{pl.GuildID: {pl.UserID}}, true, note)[pl.GuildID] {
-			pll := b.guildLang(pl.GuildID)
-			b.dm(pl.UserID, notice(colorFull, pll.T(dmKey, escape(p.LeaderName), p.LeaderID, where, b.bringing(p, pl),
+		b.pingOrDM(p, map[string][]string{pl.GuildID: {pl.UserID}}, note, func(guildID, to string) bool {
+			pll := b.guildLang(guildID)
+			return b.dm(to, notice(colorFull, pll.T(dmKey, escape(p.LeaderName), p.LeaderID, where, b.bringing(p, pl),
 				postStart(p, pll))+leaderCharLine(p, pll)))
-		}
+		})
 	}
 	// They joined the threads as applicants; this covers anyone who wasn't
 	// added then.

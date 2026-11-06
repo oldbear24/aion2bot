@@ -120,7 +120,7 @@ func TestCleanChar(t *testing.T) {
 func TestProfileAsksForCharacterAndReminders(t *testing.T) {
 	b := testBot(t)
 	prof := lfg.Profile{ClassID: "cleric", RoleID: "healer", Char: "Lunaria", Server: "Siel", GS: 3150, Faction: "asmodian",
-		SkipReminders: true}
+		SkipReminders: true, ByDM: true}
 	m := b.profileForm(prof, i18n.English)
 	values := map[string]string{}
 	for _, c := range m.Components {
@@ -147,7 +147,7 @@ func TestProfileAsksForCharacterAndReminders(t *testing.T) {
 		}
 	}
 	for id, want := range map[string]string{profChoice: "cleric|healer", profFaction: "asmodian", profZone: "Europe/Prague",
-		profRemind: "off"} {
+		profRemind: "off", profDM: "on"} {
 		if got := defaults[profilePrefix+id]; !slices.Equal(got, []string{want}) {
 			t.Errorf("%s menu starts at %v, want %s", id, got, want)
 		}

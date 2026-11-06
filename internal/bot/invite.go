@@ -162,8 +162,8 @@ func inviteSummary(sent []lfg.Invite, skipped map[string][]string, l i18n.Lang) 
 }
 
 // sendInvites pings the invited players in the thread under the post on
-// the server they were invited on, and DMs those it doesn't reach. The note
-// shows in the threads on every server.
+// the server they were invited on, or by DM. The note shows in the threads
+// on every server.
 func (b *Bot) sendInvites(p lfg.Post, invites []lfg.Invite) {
 	now := time.Now()
 	pings := map[string][]string{}
@@ -175,14 +175,11 @@ func (b *Bot) sendInvites(p lfg.Post, invites []lfg.Invite) {
 		pings[inv.GuildID] = append(pings[inv.GuildID], inv.UserID)
 	}
 	b.learnMembers(p, p.GuildIDs())
-	reached := b.announce(p, pings, true, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+	b.pingOrDM(p, pings, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
 		return b.inviteNote(p, invites, guildID, l)
+	}, func(guildID, userID string) bool {
+		return b.dm(userID, b.inviteDM(p, b.guildLang(guildID)))
 	})
-	for _, inv := range invites {
-		if !reached[inv.GuildID] {
-			b.dm(inv.UserID, b.inviteDM(p, b.guildLang(inv.GuildID)))
-		}
-	}
 }
 
 // onUninvite withdraws the invitations the leader picked.
@@ -224,7 +221,7 @@ func (b *Bot) inviteNote(p lfg.Post, invites []lfg.Invite, guildID string, l i18
 	)
 }
 
-// inviteDM is the invitation for a player the thread didn't reach.
+// inviteDM is the invitation by DM.
 func (b *Bot) inviteDM(p lfg.Post, l i18n.Lang) discordgo.MessageComponent {
 	return container(colorOpen,
 		text(l.T("dm.invited", escape(p.LeaderName), p.LeaderID, b.runName(p), postStart(p, l))+leaderCharLine(p, l)),

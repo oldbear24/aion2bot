@@ -215,7 +215,8 @@ var cs = map[string]string{
 	"move.abyss_yes":            "Změnit událost",
 	"find.abyss_option_missing": "přihlášeno %d",
 
-	// DMs, when a ping can't go to a thread.
+	// DMs, for players who get their pings by DM, or when a ping can't go
+	// to a thread.
 	"ping.leader_char": "🎮 Vedoucí hraje ve hře za %s.",
 	"dm.promoted":      "### 🎉 Posunul ses z náhradníků do party!\nUvolnilo se místo: **%s** (<@%s>) tě bere do %s jako %s.\n🕒 Začátek: %s\nNapiš vedoucímu o pozvánku ve hře.",
 	"dm.reminder":      "### ⏰ Nábor %s začíná <t:%d:R>\nV <t:%d:t>. Je čas se připravit!",
@@ -389,7 +390,7 @@ var cs = map[string]string{
 
 	// /help.
 	"help.title":  "## 📖 AION 2 – hledání party",
-	"help.find":   "### 🔎 Najdi partu\n• %s ukáže otevřené nábory, do kterých se s tvým povoláním, GS a frakcí dostaneš; vyber jeden a přidej se. %s ti napíše, až se objeví nový.\n• Nebo sleduj LFG kanál: objevují se tam nábory z tohoto serveru i z propojených serverů.\n• Klikni na **✋ Přidat se**, vyber roli a povolání a zadej své GS a jméno postavy. Bot tě přidá do vlákna pod náborem.\n• Parta už je plná? **🪑 Přidat se jako náhradník**: když odejde hráč s tvou rolí, automaticky se posuneš.\n• V tom vláknu se domluvíš s vedoucím a partou; sdílí ho všechny propojené servery.\n• Až tě vedoucí přijme, dostaneš ve vláknu jednu zmínku a %s před plánovaným začátkem připomínku. Napiš vedoucímu o pozvánku ve hře.\n• Už nechceš? Klikni u náboru na **Odejít**. %s ukáže všechny nábory, které vedeš nebo ve kterých jsi.\n• %s uloží tvou hlavní roli, povolání, frakci, postavu, herní server a GS, takže se ti formulář předvyplní. Vypneš tam i připomínky.",
+	"help.find":   "### 🔎 Najdi partu\n• %s ukáže otevřené nábory, do kterých se s tvým povoláním, GS a frakcí dostaneš; vyber jeden a přidej se. %s ti napíše, až se objeví nový.\n• Nebo sleduj LFG kanál: objevují se tam nábory z tohoto serveru i z propojených serverů.\n• Klikni na **✋ Přidat se**, vyber roli a povolání a zadej své GS a jméno postavy. Bot tě přidá do vlákna pod náborem.\n• Parta už je plná? **🪑 Přidat se jako náhradník**: když odejde hráč s tvou rolí, automaticky se posuneš.\n• V tom vláknu se domluvíš s vedoucím a partou; sdílí ho všechny propojené servery.\n• Až tě vedoucí přijme, dostaneš ve vláknu jednu zmínku a %s před plánovaným začátkem připomínku. Napiš vedoucímu o pozvánku ve hře.\n• Už nechceš? Klikni u náboru na **Odejít**. %s ukáže všechny nábory, které vedeš nebo ve kterých jsi.\n• %s uloží tvou hlavní roli, povolání, frakci, postavu, herní server a GS, takže se ti formulář předvyplní. Vypneš tam připomínky nebo zapneš upozornění do DM.",
 	"help.post":   "### 📣 Založ nábor\n• %s otevře soukromý panel: dungeon nebo raid, obtížnost, koho hledáte (%s, konkrétní povolání nebo Libovolné povolání), kolik hráčů chybí a za co hraješ.\n• Nepovinně: frakce (přidat se pak můžou jen její hráči), minimální GS, začátek a poznámka.\n• **Zveřejnit** pošle nábor na všechny propojené servery. Až se přidá první hráč, dostaneš jednu zmínku ve vláknu pod náborem.\n• **⚙️ Spravovat** u náboru: přijímej, odmítej nebo **zvi** hráče (pozvaní jsou po přidání rovnou v partě), měň, koho hledáte, GS, začátek a poznámku (✏️), počet chybějících (−1/+1) nebo dungeon (🗺️), předej nábor, **🔒 Uzavři**, **🗑️ Smaž** nebo **🔓 Znovu otevři** ho, nebo ho **zkopíruj** na jiný termín se všemi, kdo v něm jsou, a ti dostanou zprávu.\n• Vlákno pod náborem vzniká hned s ním, takže se tě v něm hráči můžou na cokoli zeptat; sdílí ho všechny propojené servery.\n• Otevřených náborů můžeš mít až %d. Nábory platí %s a 24 hodin po skončení zmizí.\n• %s ukáže, kolik náborů vzniklo a naplnilo se a které dungeony jsou nejoblíbenější.",
 	"help.abyss":  "### 🏰 Události v Abyssu\n• %s svolá hráče na %s. Přidávají se rovnou, bez čekání na tebe, až do velikosti skupiny, kterou zvolíš, nebo bez omezení.\n• Svolání je vždy pro jednu frakci a může uvést svůj herní server; Abyss páruje servery, takže se přidají jen hráči z něj.\n• Když je skupina plná, noví hráči se zapisují jako náhradníci a podle pořadí se posouvají, jakmile se uvolní místo.\n• Spravovat odebírá hráče a mění velikost skupiny; zbytek funguje jako u každého náboru.",
 	"help.admin":  "### 🛠️ Pro správce serveru\n• %s nastaví LFG kanál, roli k označení a jazyk a zkontroluje oprávnění bota.\n• %s kdykoli zkontroluje oprávnění, roli k označení a propojení serveru.\n• %s založí síť a dá kód pro připojení; ostatní servery se připojí přes %s a sdílí nábory. %s ukáže propojené servery.\n• %s vypne příjem náborů tady; %s zveřejní tento návod pro všechny.\n• Moderátoři (Spravovat zprávy) můžou přes Spravovat u náboru odstranit kterýkoli nábor z tohoto serveru a blokovat hráče. Nábory založené tady, nebo kdekoli v síti, kterou tento server vlastní, můžou i uzavřít, smazat nebo předat. %s ukáže blokované hráče.",
@@ -535,6 +536,13 @@ var cs = map[string]string{
 	"profile.server":        "Herní server",
 	"profile.server_help":   "Svolání do Abyssu berou hráče jen z jednoho herního serveru.",
 	"profile.server_ph":     "např. Siel",
+	"profile.dm_label":      "-# Upozornění na tvé nábory — zmínkou ve vláknu pod náborem, nebo do soukromých zpráv",
+	"profile.dm":            "Kde ti dávat vědět",
+	"profile.dm_off":        "Označ mě ve vláknu",
+	"profile.dm_on":         "Napiš mi do soukromých zpráv",
+	"profile.dm_saved":      "✅ Uloženo. Upozornění ti teď budou chodit do soukromých zpráv – první zprávu už tam máš.",
+	"profile.dm_refused":    "Nepodařilo se mi ti napsat, takže upozornění zůstávají ve vláknu. V nastavení soukromí na Discordu povol přímé zprávy od členů serveru a pak to zkus znovu.",
+	"dm.by_dm":              "### 📩 Upozornění ti teď budou chodit sem\nMísto zmínky ve vláknu pod náborem ti napíšu sem: když se do tvého náboru přidá první hráč nebo ti někdo nábor předá, když se dostaneš do party, před začátkem náboru, ve kterém jsi, a když tě vedoucí pozve nebo zkopíruje nábor i s tebou. Ve vláknech se dál ukazuje všechno.\n-# Chceš je zase ve vláknu? Přepneš to v %s.",
 
 	// Kopírování náboru na nový termín.
 	"manage.copy":          "Zkopírovat na jiný termín",

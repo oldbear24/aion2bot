@@ -43,6 +43,9 @@ type Profile struct {
 	// server, as they wrote it.
 	Faction string
 	Server  string
+	// ByDM sends the player's pings about their runs by DM instead of in
+	// the threads under the posts.
+	ByDM bool
 }
 
 const schema = `
@@ -258,6 +261,7 @@ var migrations = []string{
 	`ALTER TABLE posts ADD COLUMN invites TEXT NOT NULL DEFAULT '[]'`,
 	`ALTER TABLE relays ADD COLUMN guild_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE relays ADD COLUMN quote TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE profiles ADD COLUMN by_dm INTEGER NOT NULL DEFAULT 0`,
 }
 
 var addColumn = regexp.MustCompile(`^ALTER TABLE (\w+) ADD COLUMN (\w+) `)
@@ -891,9 +895,9 @@ func (s *Store) DeletePost(id string) {
 
 func (s *Store) Profile(userID string) (Profile, bool) {
 	p := Profile{UserID: userID}
-	err := s.db.QueryRow(`SELECT class_id, role_id, gs, timezone, char_name, skip_reminders, faction, server
+	err := s.db.QueryRow(`SELECT class_id, role_id, gs, timezone, char_name, skip_reminders, faction, server, by_dm
 		FROM profiles WHERE user_id = ?`, userID).
-		Scan(&p.ClassID, &p.RoleID, &p.GS, &p.TimeZone, &p.Char, &p.SkipReminders, &p.Faction, &p.Server)
+		Scan(&p.ClassID, &p.RoleID, &p.GS, &p.TimeZone, &p.Char, &p.SkipReminders, &p.Faction, &p.Server, &p.ByDM)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			log.Printf("store: load profile %s: %v", userID, err)
@@ -905,13 +909,13 @@ func (s *Store) Profile(userID string) (Profile, bool) {
 
 func (s *Store) SetProfile(p Profile) error {
 	_, err := s.db.Exec(`INSERT INTO profiles (user_id, class_id, role_id, gs, timezone, char_name, skip_reminders, faction, server,
-			updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			by_dm, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET class_id = excluded.class_id, role_id = excluded.role_id,
 			gs = excluded.gs, timezone = excluded.timezone, char_name = excluded.char_name,
 			skip_reminders = excluded.skip_reminders, faction = excluded.faction, server = excluded.server,
-			updated_at = excluded.updated_at`,
-		p.UserID, p.ClassID, p.RoleID, p.GS, p.TimeZone, p.Char, p.SkipReminders, p.Faction, p.Server, millis(time.Now()))
+			by_dm = excluded.by_dm, updated_at = excluded.updated_at`,
+		p.UserID, p.ClassID, p.RoleID, p.GS, p.TimeZone, p.Char, p.SkipReminders, p.Faction, p.Server, p.ByDM, millis(time.Now()))
 	return err
 }
 
