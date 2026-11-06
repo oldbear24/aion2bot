@@ -164,8 +164,8 @@ func (b *Bot) onCopySubmit(i *discordgo.Interaction, postID string) error {
 }
 
 // tellCopied pings everyone who came along to a copy in the thread under it,
-// on the server they joined from, mentionBatch per note, and DMs those it
-// doesn't reach. Every thread gets the note. It returns how many were told.
+// on the server they joined from, mentionBatch per note, or by DM. Every
+// thread gets the note. It returns how many were told.
 func (b *Bot) tellCopied(p lfg.Post) int {
 	people := p.People()[1:]
 	if len(people) == 0 {
@@ -181,13 +181,9 @@ func (b *Bot) tellCopied(p lfg.Post) int {
 			return nil
 		}
 		return b.copiedNote(p, users, guildID, l)
-	}, func(guildID string, users []string) {
-		l := b.guildLang(guildID)
-		for _, id := range users {
-			if pl, ok := personOn(p, id); ok {
-				b.dm(id, b.copiedDM(p, pl, l))
-			}
-		}
+	}, func(guildID, userID string) bool {
+		pl, ok := personOn(p, userID)
+		return ok && b.dm(userID, b.copiedDM(p, pl, b.guildLang(guildID)))
 	})
 	return len(people)
 }
@@ -215,8 +211,8 @@ func (b *Bot) copiedNote(p lfg.Post, users []string, guildID string, l i18n.Lang
 	)
 }
 
-// copiedDM tells a player the thread didn't reach that they're on the copy,
-// where, and how to leave it.
+// copiedDM tells a player by DM that they're on the copy, where, and how to
+// leave it.
 func (b *Bot) copiedDM(p lfg.Post, pl lfg.Player, l i18n.Lang) discordgo.MessageComponent {
 	return container(statusColor(p.Status),
 		text(l.T("dm.copied", b.runName(p), escape(p.LeaderName), p.LeaderID, b.bringing(p, pl), b.mineStanding(p, pl.UserID, l),

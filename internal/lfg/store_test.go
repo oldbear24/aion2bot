@@ -492,7 +492,7 @@ func TestProfiles(t *testing.T) {
 		t.Fatal("profile before saving")
 	}
 	want := Profile{UserID: "u1", ClassID: "gladiator", RoleID: "tank", GS: 2900, TimeZone: "Europe/Prague", Char: "Lea", SkipReminders: true,
-		Faction: "elyos", Server: "Siel"}
+		Faction: "elyos", Server: "Siel", ByDM: true}
 	if err := s.SetProfile(want); err != nil {
 		t.Fatal(err)
 	}

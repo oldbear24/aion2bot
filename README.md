@@ -53,7 +53,7 @@ It uses Discord's new components:
 5. **Join.** Players click **Join**, pick their role and class (only combinations the post asks for) and enter their gear score and in-game character name.
    The form also asks for their faction, and for a rally's game server, when their profile doesn't already fit: on an alt, or before they saved them.
    A player of another faction, or from another server for a rally, can't join.
-   `/profile` is a private panel: menus for the main role and class, the faction, the time zone and reminders, saved as soon as they're picked,
+   `/profile` is a private panel: menus for the main role and class, the faction, the time zone, reminders and where the player is pinged (in the thread or by DM), saved as soon as they're picked,
    and a form for the character name, game server and GS. It fills in the join form; the GS, character, faction and server also follow every join.
    A character name or GS saved there also shows on the open runs the player leads or is on with that character (or with none named):
    a new name counts as the character renamed, unless they're already on a run as that name, which means they switched to it, so their alt's entries stay.
@@ -94,6 +94,10 @@ It uses Discord's new components:
      the leader when the first player joins, each player when they're accepted (or move up from the reserves). After that, changes only edit the card, which never notifies anyone.
    - The one exception is the **reminder** `reminder_minutes` before a planned start: the leader and the players accepted by then are pinged once more.
      Players accepted later were told the start already, and anyone can turn reminders off in `/profile`.
+   - **Pings by DM.** A player who'd rather get these pings privately picks DMs in `/profile`: the leader's first player, being accepted or moving up,
+     the reminder, a run handed over to them, an invitation and a copy they came along to then come by DM, with the same buttons (⚙️ **Manage**, **Join**, **Leave**).
+     The notes still go to every thread, mentioning them without a ping. Picking DMs sends a first one, and only a DM that goes through turns them on:
+     Discord refuses DMs to players who don't take them from server members, and the panel says what to change. A DM that fails later falls back to the ping in the thread.
    - What players write in one thread is relayed to the threads on the other servers, under the player's name and avatar (through a webhook in the LFG channel).
      Without *Manage Webhooks* the bot posts them itself, led by the player's name. Edits and deletes follow, so moderating one server's thread covers all of them.
      Attachments and stickers come along as pictures (animated stickers, which Discord has no picture of, by name), and a forwarded message as a quote.
@@ -190,7 +194,7 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | `/lfg-notify` | everyone | Sets up a DM for new runs: the dungeons you want and what you play |
 | `/lfg-mine` | everyone | Lists the runs you lead or joined, with **Manage** and **Leave**, the runs you're invited to, with **Join**, and your ended runs you can still reopen or copy, only to you |
 | `/lfg-stats [days]` | everyone | Shows runs posted and filled, the most popular dungeons and the busiest servers of the network |
-| `/profile` | everyone | Shows and changes your main role, class, faction, character name, game server, gear score, time zone and whether you want reminders |
+| `/profile` | everyone | Shows and changes your main role, class, faction, character name, game server, gear score, time zone, whether you want reminders, and whether you're pinged in the thread or by DM |
 | `/help` | everyone | Shows how to use the bot, only to you (members with Manage Server also see the admin commands) |
 | `/legend` | everyone | Explains the icons on posts: roles, every class and the roles it fills, the leader's crown and the party lists, only to you |
 | `/help-public` | Manage Messages | Posts the player guide (without the admin commands) in the channel for everyone (permission adjustable in Server Settings → Integrations) |
