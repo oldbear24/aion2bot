@@ -94,11 +94,34 @@ type Webhook struct {
 }
 
 // Relay is a copy of a player's thread message in the thread on another
-// server. Webhook is zero when the bot posted the copy itself.
+// server. Webhook is zero when the bot posted the copy itself. Quote is
+// the line a copy of a reply starts with, which shows what it answers;
+// edits keep it.
 type Relay struct {
+	GuildID   string
 	ChannelID string
 	MessageID string
 	Webhook   Webhook
+	Quote     string
+}
+
+// Relayed is a player's thread message the bot relayed: where they wrote
+// it, and their name as the copies show it.
+type Relayed struct {
+	PostID    string
+	GuildID   string
+	ChannelID string
+	MessageID string
+	AuthorID  string
+	Author    string
+}
+
+// Reaction is a player's reaction, or the bot's, on a relayed message or
+// one of its copies.
+type Reaction struct {
+	MessageID string
+	Emoji     string
+	UserID    string
 }
 
 type Post struct {

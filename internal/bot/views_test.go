@@ -366,7 +366,8 @@ func TestMemberCacheExpires(t *testing.T) {
 
 func TestSetupReport(t *testing.T) {
 	all := int64(discordgo.PermissionViewChannel | discordgo.PermissionSendMessages |
-		discordgo.PermissionCreatePublicThreads | discordgo.PermissionSendMessagesInThreads | discordgo.PermissionManageWebhooks)
+		discordgo.PermissionCreatePublicThreads | discordgo.PermissionSendMessagesInThreads | discordgo.PermissionManageWebhooks |
+		discordgo.PermissionAddReactions | discordgo.PermissionReadMessageHistory | discordgo.PermissionUseExternalEmojis)
 	if report, ready := setupReport(all, "c", nil, i18n.English); !ready || strings.ContainsAny(report, "❌⚠") {
 		t.Errorf("all permissions: ready %v\n%s", ready, report)
 	}

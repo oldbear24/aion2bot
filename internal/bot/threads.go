@@ -200,7 +200,12 @@ func (b *Bot) onMessageCreate(_ *discordgo.Session, m *discordgo.MessageCreate) 
 }
 
 func (b *Bot) relay(p lfg.Post, m *discordgo.Message) {
-	content := b.relayContent(m)
+	to := b.repliedTo(m)
+	room := maxContent
+	if to != nil {
+		room -= maxQuote + 1
+	}
+	content := b.relayBody(m, room)
 	if content == "" {
 		return
 	}
@@ -221,12 +226,14 @@ func (b *Bot) relay(p lfg.Post, m *discordgo.Message) {
 		threadID, fresh, err := b.thread(p, ref)
 		var c lfg.Relay
 		if err == nil {
-			c, err = b.relayTo(ref.ChannelID, threadID, from, content)
+			quote, replyID := b.quoteIn(to, ref.GuildID, threadID)
+			c, err = b.relayTo(ref.ChannelID, threadID, from, content, quote, replyID)
 		}
 		if err != nil {
 			log.Printf("relay message %s of post %s to guild %s: %v", m.ID, p.ID, ref.GuildID, err)
 			return
 		}
+		c.GuildID = ref.GuildID
 		mu.Lock()
 		defer mu.Unlock()
 		copies = append(copies, c)
@@ -235,7 +242,8 @@ func (b *Bot) relay(p lfg.Post, m *discordgo.Message) {
 			started = append(started, ref)
 		}
 	})
-	b.store.AddRelays(p.ID, m.ID, copies)
+	b.store.AddRelays(lfg.Relayed{PostID: p.ID, GuildID: m.GuildID, ChannelID: m.ChannelID, MessageID: m.ID,
+		AuthorID: m.Author.ID, Author: from.name}, copies)
 	if len(started) > 0 {
 		var guildIDs []string
 		for _, ref := range started {
@@ -250,11 +258,15 @@ func (b *Bot) relay(p lfg.Post, m *discordgo.Message) {
 type author struct{ name, server, avatar string }
 
 func (b *Bot) authorOf(m *discordgo.Message) author {
-	name := m.Author.DisplayName()
+	return author{name: authorName(m), server: b.guildName(m.GuildID), avatar: m.Author.AvatarURL("128")}
+}
+
+// authorName is the name a message's author goes by on its server.
+func authorName(m *discordgo.Message) string {
 	if m.Member != nil && m.Member.Nick != "" {
-		name = m.Member.Nick
+		return m.Member.Nick
 	}
-	return author{name: name, server: b.guildName(m.GuildID), avatar: m.Author.AvatarURL("128")}
+	return m.Author.DisplayName()
 }
 
 // webhookName is "Name · Server".
@@ -275,36 +287,93 @@ func (a author) prefixed(content string) string {
 }
 
 // relayContent is a player's message as the other servers see it: mentions
-// written as names, which other servers couldn't resolve, and attachments
-// as links, which Discord shows inline. Stickers are left out.
-func (b *Bot) relayContent(m *discordgo.Message) string {
+// written as names, which other servers couldn't resolve, attachments and
+// stickers as links, which Discord shows inline, and a forwarded message
+// as a quote.
+func (b *Bot) relayContent(m *discordgo.Message) string { return b.relayBody(m, maxContent) }
+
+// relayBody is relayContent in at most room characters. A long text is cut
+// short, so the attachments still fit.
+func (b *Bot) relayBody(m *discordgo.Message, room int) string {
 	content, _ := m.ContentWithMoreMentionsReplaced(b.s)
-	var links []string
-	for _, a := range m.Attachments {
-		links = append(links, a.URL)
+	content = strings.TrimSpace(content)
+	links := mediaLinks(m)
+	if fw := forwarded(m); fw != nil {
+		text, _ := fw.ContentWithMoreMentionsReplaced(b.s)
+		if text = strings.TrimSpace(text); text != "" {
+			content = strings.TrimSpace(content + "\n" + quote(text))
+		}
+		links = append(links, mediaLinks(fw)...)
 	}
 	tail := strings.Join(links, "\n")
-	room := maxContent - len([]rune(tail)) - 1
-	content = strings.TrimSpace(content)
-	if room <= 0 {
-		return truncate(tail, maxContent)
+	left := room - len([]rune(tail)) - 1
+	if left <= 0 {
+		return truncate(tail, room)
 	}
 	if content != "" {
-		content = truncate(content, room)
+		content = truncate(content, left)
 	}
 	return strings.TrimSpace(content + "\n" + tail)
 }
 
+// forwarded is the message a player forwarded, if they did.
+func forwarded(m *discordgo.Message) *discordgo.Message {
+	if m.MessageReference == nil || m.MessageReference.Type != discordgo.MessageReferenceTypeForward {
+		return nil
+	}
+	for _, snap := range m.MessageSnapshots {
+		if snap.Message != nil {
+			fw := *snap.Message
+			if fw.ChannelID == "" {
+				fw.ChannelID = m.ChannelID
+			}
+			return &fw
+		}
+	}
+	return nil
+}
+
+// mediaLinks are a message's attachments and stickers as links. Discord
+// draws animated stickers itself and has no picture of them, so those
+// come as their name.
+func mediaLinks(m *discordgo.Message) []string {
+	var links []string
+	for _, a := range m.Attachments {
+		links = append(links, a.URL)
+	}
+	for _, st := range m.StickerItems {
+		switch st.FormatType {
+		case discordgo.StickerFormatTypePNG, discordgo.StickerFormatTypeAPNG:
+			links = append(links, "https://media.discordapp.net/stickers/"+st.ID+".png?size=160")
+		case discordgo.StickerFormatTypeGIF:
+			links = append(links, "https://media.discordapp.net/stickers/"+st.ID+".gif?size=160")
+		default:
+			links = append(links, "🏷️ *"+escape(st.Name)+"*")
+		}
+	}
+	return links
+}
+
+// withQuote puts the line that shows what a reply answers before it.
+func withQuote(quote, text string) string {
+	if quote == "" {
+		return text
+	}
+	return truncate(quote+"\n"+text, maxContent)
+}
+
 // relayTo posts a relayed message in a thread under a channel: through the
 // channel's webhook, under the author's name and avatar, or by the bot
-// itself where it has no webhook.
-func (b *Bot) relayTo(channelID, threadID string, from author, content string) (lfg.Relay, error) {
+// itself where it has no webhook. A reply starts with quote, the line that
+// shows what it answers. The bot itself replies to replyID instead, the
+// copy of that message in the thread, when there is one: webhooks can't.
+func (b *Bot) relayTo(channelID, threadID string, from author, content, quote, replyID string) (lfg.Relay, error) {
 	if w, ok := b.webhook(channelID); ok {
 		msg, err := b.s.WebhookThreadExecute(w.ID, w.Token, true, threadID, &discordgo.WebhookParams{
-			Content: content, Username: from.webhookName(), AvatarURL: from.avatar, AllowedMentions: noMentions,
+			Content: withQuote(quote, content), Username: from.webhookName(), AvatarURL: from.avatar, AllowedMentions: noMentions,
 		})
 		if err == nil {
-			return lfg.Relay{ChannelID: threadID, MessageID: msg.ID, Webhook: w}, nil
+			return lfg.Relay{ChannelID: threadID, MessageID: msg.ID, Webhook: w, Quote: quote}, nil
 		}
 		switch restCode(err) {
 		case discordgo.ErrCodeUnknownWebhook, discordgo.ErrCodeInvalidWebhookTokenProvided:
@@ -314,13 +383,18 @@ func (b *Bot) relayTo(channelID, threadID string, from author, content string) (
 			log.Printf("relay through webhook into thread %s: %v", threadID, err)
 		}
 	}
-	msg, err := b.s.ChannelMessageSendComplex(threadID, &discordgo.MessageSend{
-		Content: from.prefixed(content), AllowedMentions: noMentions,
-	})
+	send := &discordgo.MessageSend{Content: withQuote(quote, from.prefixed(content)), AllowedMentions: noMentions}
+	if replyID != "" {
+		quote = ""
+		failIfGone := false
+		send.Content = from.prefixed(content)
+		send.Reference = &discordgo.MessageReference{MessageID: replyID, ChannelID: threadID, FailIfNotExists: &failIfGone}
+	}
+	msg, err := b.s.ChannelMessageSendComplex(threadID, send)
 	if err != nil {
 		return lfg.Relay{}, err
 	}
-	return lfg.Relay{ChannelID: threadID, MessageID: msg.ID}, nil
+	return lfg.Relay{ChannelID: threadID, MessageID: msg.ID, Quote: quote}, nil
 }
 
 // webhook returns the bot's webhook in a channel, setting one up the first
@@ -398,7 +472,13 @@ func (b *Bot) onMessageUpdate(_ *discordgo.Session, m *discordgo.MessageUpdate) 
 	mu.Lock()
 	defer mu.Unlock()
 	copies := b.store.Relays(m.ID)
-	content := b.relayContent(m.Message)
+	room := maxContent
+	for _, c := range copies {
+		if c.Quote != "" {
+			room = maxContent - maxQuote - 1
+		}
+	}
+	content := b.relayBody(m.Message, room)
 	if len(copies) == 0 || content == "" {
 		return
 	}
@@ -407,10 +487,10 @@ func (b *Bot) onMessageUpdate(_ *discordgo.Session, m *discordgo.MessageUpdate) 
 		var err error
 		if c.Webhook.ID != "" {
 			endpoint := webhookMessage(c)
-			_, err = b.s.RequestWithBucketID("PATCH", endpoint, webhookEdit{Content: content, AllowedMentions: noMentions},
+			_, err = b.s.RequestWithBucketID("PATCH", endpoint, webhookEdit{Content: withQuote(c.Quote, content), AllowedMentions: noMentions},
 				discordgo.EndpointWebhookToken("", ""))
 		} else {
-			text := from.prefixed(content)
+			text := withQuote(c.Quote, from.prefixed(content))
 			_, err = b.s.ChannelMessageEditComplex(&discordgo.MessageEdit{ID: c.MessageID, Channel: c.ChannelID,
 				Content: &text, AllowedMentions: noMentions})
 		}

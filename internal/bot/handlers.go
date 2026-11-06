@@ -884,10 +884,10 @@ func first(values []string) string {
 // the others pings go by DM. key names the permission and the reason for
 // it in the catalog.
 //
-// Nothing else is needed: the bot only edits and deletes its own messages
-// and threads, reads only what players write in the threads under posts,
-// and answers commands, buttons and forms through interactions, which
-// need no permission.
+// Nothing else is needed: the bot only edits and deletes its own messages,
+// threads and reactions, reads only what players write in the threads
+// under posts, and answers commands, buttons and forms through
+// interactions, which need no permission.
 var setupChecks = []struct {
 	perm     int64
 	key      string
@@ -897,6 +897,8 @@ var setupChecks = []struct {
 	{discordgo.PermissionSendMessages, "perm.send", true},
 	{discordgo.PermissionCreatePublicThreads | discordgo.PermissionSendMessagesInThreads, "perm.threads", false},
 	{discordgo.PermissionManageWebhooks, "perm.webhooks", false},
+	{discordgo.PermissionAddReactions | discordgo.PermissionReadMessageHistory, "perm.react", false},
+	{discordgo.PermissionUseExternalEmojis, "perm.emojis", false},
 }
 
 // setupReport is the ✅/⚠️/❌ checklist of the bot's permissions in the

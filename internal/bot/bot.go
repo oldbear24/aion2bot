@@ -69,8 +69,10 @@ func New(token string, game *config.Game, store *lfg.Store, devGuild string) (*B
 	if err != nil {
 		return nil, err
 	}
-	// Thread messages are relayed between servers, which needs their text.
-	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent
+	// Thread messages are relayed between servers, which needs their text,
+	// and their reactions follow them.
+	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent |
+		discordgo.IntentsGuildMessageReactions
 
 	b := &Bot{
 		s:          s,
@@ -91,6 +93,10 @@ func New(token string, game *config.Game, store *lfg.Store, devGuild string) (*B
 	s.AddHandler(b.onMessageUpdate)
 	s.AddHandler(b.onMessageDelete)
 	s.AddHandler(b.onMessageDeleteBulk)
+	s.AddHandler(b.onReactionAdd)
+	s.AddHandler(b.onReactionRemove)
+	s.AddHandler(b.onReactionRemoveAll)
+	s.AddHandler(b.onReactionRemoveEmoji)
 	return b, nil
 }
 
