@@ -96,7 +96,7 @@ func copyPost() Post {
 		DungeonID: "krao-cave", ModeID: "conquest", MinGS: 2600, LookingFor: []string{"tank", "dps"}, Missing: 1,
 		Faction: "elyos", Note: "old note", Start: "legacy", StartAt: time.Now().Add(-2 * time.Hour), Status: StatusClosed,
 		CreatedAt: time.Now().Add(-3 * time.Hour), ClosedAt: time.Now().Add(-time.Hour), FilledAt: time.Now().Add(-150 * time.Minute),
-		Revision: 9, Reminded: true,
+		Revision: 9, Reminded: true, Archived: true,
 		Accepted: []Player{{UserID: "T", ClassID: "templar", RoleID: "tank", GuildID: "g1"},
 			{UserID: "D", ClassID: "ranger", RoleID: "dps", GuildID: "g2"}},
 		Applicants: []Player{{UserID: "A", ClassID: "sorcerer", RoleID: "dps"}},
@@ -124,7 +124,7 @@ func TestCopy(t *testing.T) {
 	switch {
 	case c.ID != "" || c.Messages != nil || c.Pinged != nil || c.Hidden != nil || c.Invites != nil:
 		t.Errorf("the copy took what belongs to the old post: %+v", c)
-	case c.Status != StatusOpen || !c.ClosedAt.IsZero() || !c.FilledAt.IsZero() || c.Revision != 0 || c.Reminded:
+	case c.Status != StatusOpen || !c.ClosedAt.IsZero() || !c.FilledAt.IsZero() || c.Revision != 0 || c.Reminded || c.Archived:
 		t.Errorf("the copy isn't a fresh open post: %+v", c)
 	case !c.StartAt.Equal(start) || c.Start != "" || !c.ExpiresAt.Equal(start.Add(ttl)) || !c.CreatedAt.Equal(now) || c.Note != "new note":
 		t.Errorf("the copy's times and note: %+v", c)

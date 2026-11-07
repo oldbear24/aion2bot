@@ -339,6 +339,61 @@ func TestRemindersAreDueOnce(t *testing.T) {
 	}
 }
 
+// The threads under a post are due to be archived once it ends, and once per
+// end: a post reopened since starts over.
+func TestThreadsAreArchivedOncePerEnd(t *testing.T) {
+	s, _ := openTestStore(t)
+	now := time.Now()
+	create := func() Post {
+		p := newPost(2)
+		p.ExpiresAt = now.Add(time.Hour)
+		p, err := s.CreatePost(p, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	ended := create()
+	create() // still open
+	if due := s.ArchiveDue(10); len(due) != 0 {
+		t.Fatalf("due while open: %v", due)
+	}
+	ended, _ = s.UpdatePost(ended.ID, func(p *Post) error { return p.Close(StatusClosed, now) })
+
+	due := s.ArchiveDue(10)
+	if len(due) != 1 || due[0].ID != ended.ID {
+		t.Fatalf("due: %+v, want %s", due, ended.ID)
+	}
+	s.MarkArchived(ended.ID, due[0].ClosedAt)
+	if again := s.ArchiveDue(10); len(again) != 0 {
+		t.Fatalf("archived twice: %v", again)
+	}
+	// Marking it doesn't count as a change, and later changes keep it.
+	p, _ := s.UpdatePost(ended.ID, func(p *Post) error { p.Note = "after"; return nil })
+	if !p.Archived || p.Revision != ended.Revision+1 {
+		t.Fatalf("archived %v revision %d", p.Archived, p.Revision)
+	}
+
+	// Reopened, the post starts over: archiving its threads for the old end
+	// doesn't count, and they're due once it ends again.
+	p, err := s.ReopenPost(ended.ID, 10, time.Hour, now)
+	if err != nil || p.Archived {
+		t.Fatalf("reopen: err %v archived %v", err, p.Archived)
+	}
+	s.MarkArchived(ended.ID, due[0].ClosedAt)
+	if p, _ := s.Post(ended.ID); p.Archived {
+		t.Fatal("the reopened post counts as archived")
+	}
+	if due := s.ArchiveDue(10); len(due) != 0 {
+		t.Fatalf("due while open again: %v", due)
+	}
+	s.UpdatePost(ended.ID, func(p *Post) error { return p.Close(StatusExpired, now.Add(2*time.Hour)) })
+	s.MarkArchived(ended.ID, due[0].ClosedAt)
+	if due := s.ArchiveDue(10); len(due) != 1 || due[0].ID != ended.ID {
+		t.Fatalf("due after its new end: %+v", due)
+	}
+}
+
 func TestRunsKeepEndedPosts(t *testing.T) {
 	s, _ := openTestStore(t)
 	now := time.Now()

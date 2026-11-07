@@ -185,7 +185,7 @@ var postColumns = []string{
 	"id", "leader_id", "leader_name", "guild_id", "guild_name", "dungeon_id", "mode_id", "min_gs", "looking_for",
 	"missing", "start", "note", "status", "created_at", "expires_at", "closed_at", "revision", "pinged", "start_at",
 	"leader_char", "filled_at", "reminded", "leader_class", "leader_role", "leader_gs", "rally", "size",
-	"faction", "server", "hidden", "invites",
+	"faction", "server", "hidden", "invites", "archived",
 }
 
 var (
@@ -262,6 +262,7 @@ var migrations = []string{
 	`ALTER TABLE relays ADD COLUMN guild_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE relays ADD COLUMN quote TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE profiles ADD COLUMN by_dm INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE posts ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
 }
 
 var addColumn = regexp.MustCompile(`^ALTER TABLE (\w+) ADD COLUMN (\w+) `)
@@ -867,6 +868,25 @@ func (s *Store) EndedBefore(cutoff time.Time, limit int) []EndedPost {
 	return out
 }
 
+// ArchiveDue lists up to limit ended posts whose threads aren't archived
+// yet, those that ended first first.
+func (s *Store) ArchiveDue(limit int) []Post {
+	return s.postsWhere(`SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND archived = 0
+		ORDER BY closed_at, id LIMIT ?`, limit)
+}
+
+// MarkArchived records that the threads under a post that ended at
+// closedAt are archived. It isn't a change to the post, so the revision
+// stays. A post reopened since is left alone, even if it ended again: its
+// threads are archived anew for its new end.
+func (s *Store) MarkArchived(id string, closedAt time.Time) {
+	_, err := s.db.Exec(`UPDATE posts SET archived = 1 WHERE id = ? AND status NOT IN `+activeStatuses+` AND closed_at = ?`,
+		id, millis(closedAt))
+	if err != nil {
+		log.Printf("store: mark the threads of post %s archived: %v", id, err)
+	}
+}
+
 // AllMessages lists every message the bot posted for a post: the copies of
 // the card and the messages in their threads.
 func (s *Store) AllMessages(id string) []MessageRef {
@@ -1018,7 +1038,7 @@ func loadPost(q querier, id string) (*Post, error) {
 		&p.ID, &p.LeaderID, &p.LeaderName, &p.GuildID, &p.GuildName, &p.DungeonID, &p.ModeID, &p.MinGS, &lookingFor,
 		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt,
 		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS, &p.Rally, &p.Size,
-		&p.Faction, &p.Server, &hidden, &invites)
+		&p.Faction, &p.Server, &hidden, &invites, &p.Archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -1105,7 +1125,7 @@ func writePost(tx *sql.Tx, p *Post) error {
 		p.ID, p.LeaderID, p.LeaderName, p.GuildID, p.GuildName, p.DungeonID, p.ModeID, p.MinGS, string(lookingFor),
 		p.Missing, p.Start, p.Note, p.Status, millis(p.CreatedAt), millis(p.ExpiresAt), millis(p.ClosedAt), p.Revision,
 		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded, p.LeaderClass, p.LeaderRole,
-		p.LeaderGS, p.Rally, p.Size, p.Faction, p.Server, string(hidden), string(invites))
+		p.LeaderGS, p.Rally, p.Size, p.Faction, p.Server, string(hidden), string(invites), p.Archived)
 	if err != nil {
 		return err
 	}

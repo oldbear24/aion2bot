@@ -93,8 +93,11 @@ func (b *Bot) onComponent(i *discordgo.Interaction, action, postID string, value
 		return b.onSize(i, p, first(values))
 	case actClose:
 		after, err := b.leaderChange(i, p.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) })
-		if acc != accessLeader && p.Active() && after.ID != "" && !after.Active() {
-			b.tellLeader(after, i.GuildID, "dm.mod_closed")
+		if p.Active() && after.ID != "" && !after.Active() {
+			if acc != accessLeader {
+				b.tellLeader(after, i.GuildID, "dm.mod_closed")
+			}
+			b.archiveThreads(after)
 		}
 		return err
 	case actEdit:
