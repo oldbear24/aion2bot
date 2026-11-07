@@ -240,8 +240,10 @@ func TestReopen(t *testing.T) {
 		t.Fatalf("reopen an open post: %v", err)
 	}
 	p.Close(StatusClosed, now)
+	// Its threads were archived; they're archived again once it ends again.
+	p.Archived = true
 	if err := p.Reopen(3*time.Hour, now); err != nil || p.Status != StatusOpen || !p.ClosedAt.IsZero() ||
-		!p.ExpiresAt.Equal(now.Add(time.Hour)) || len(p.Accepted) != 1 {
+		!p.ExpiresAt.Equal(now.Add(time.Hour)) || len(p.Accepted) != 1 || p.Archived {
 		t.Fatalf("reopen: err %v %+v", err, p)
 	}
 	// An expired post gets a fresh expiry; a full one stays full.

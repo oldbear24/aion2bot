@@ -179,6 +179,9 @@ type Post struct {
 	// Reminded is set once the reminder before the start is due, whether
 	// or not anyone was reminded.
 	Reminded bool `json:"reminded,omitempty"`
+	// Archived is set once the threads under an ended post are archived.
+	// Reopening the post clears it.
+	Archived bool `json:"archived,omitempty"`
 	// Faction is the side the post is for; only its players can join.
 	// Empty means anyone.
 	Faction string `json:"faction,omitempty"`
@@ -619,7 +622,7 @@ func (p *Post) Reopen(ttl time.Duration, now time.Time) error {
 	if p.Active() {
 		return ErrStillOpen
 	}
-	p.Status, p.ClosedAt = StatusOpen, time.Time{}
+	p.Status, p.ClosedAt, p.Archived = StatusOpen, time.Time{}, false
 	if !p.ExpiresAt.After(now) {
 		p.ExpiresAt = now.Add(ttl)
 	}
@@ -651,7 +654,8 @@ const (
 func (p *Post) Copy(who CopyWho, startAt time.Time, note string, ttl time.Duration, now time.Time, leave func(Player) bool) Post {
 	c := p.Clone()
 	c.ID, c.Messages, c.Pinged, c.Hidden, c.Invites = "", nil, nil, nil, nil
-	c.Status, c.CreatedAt, c.ClosedAt, c.FilledAt, c.Revision, c.Reminded = StatusOpen, now, time.Time{}, time.Time{}, 0, false
+	c.Status, c.CreatedAt, c.ClosedAt, c.FilledAt, c.Revision = StatusOpen, now, time.Time{}, time.Time{}, 0
+	c.Reminded, c.Archived = false, false
 	c.StartAt, c.Start, c.Note = startAt, "", note
 	c.ExpiresAt = now.Add(ttl)
 	if startAt.After(now) {

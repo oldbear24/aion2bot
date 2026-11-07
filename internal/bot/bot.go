@@ -23,7 +23,8 @@ const (
 	// Ended (closed or expired) posts are deleted from every channel, along
 	// with the bot's replies under them, this long after they end.
 	keepEndedPosts = 24 * time.Hour
-	// Posts deleted per maintenance round, to stay clear of rate limits.
+	// Posts deleted, or whose threads are archived, per maintenance round,
+	// to stay clear of rate limits.
 	deleteBatch = 20
 	// The stats look back at most this far.
 	keepRuns = 90 * 24 * time.Hour
@@ -281,8 +282,9 @@ func (b *Bot) onGuildDelete(_ *discordgo.Session, g *discordgo.GuildDelete) {
 	}
 }
 
-// maintenance expires old posts, reminds parties of their start and
-// deletes ended posts.
+// maintenance expires old posts, reminds parties of their start, deletes
+// ended posts and archives the threads under the others, those it just
+// expired among them.
 func (b *Bot) maintenance() {
 	defer close(b.done)
 	tick := time.NewTicker(maintenanceEvery)
@@ -295,7 +297,9 @@ func (b *Bot) maintenance() {
 		for _, id := range b.store.DueReminders(b.game.Reminder(), now) {
 			b.remind(id)
 		}
+		// Posts due for deletion go first: their threads needn't be archived.
 		b.deleteEnded(now.Add(-keepEndedPosts))
+		b.archiveEnded()
 		b.store.PruneRuns(now.Add(-keepRuns))
 		b.dropStaleDrafts(now)
 		b.members.dropStale(now)

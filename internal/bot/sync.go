@@ -187,6 +187,32 @@ func (b *Bot) deleteEnded(cutoff time.Time) {
 	}
 }
 
+// archiveEnded archives the threads under ended posts that aren't archived
+// yet: those that just expired, and those whose threads couldn't all be
+// archived before, which are tried again every round.
+func (b *Bot) archiveEnded() {
+	for _, p := range b.store.ArchiveDue(deleteBatch) {
+		b.archiveThreads(p)
+	}
+}
+
+// archiveThreads archives the threads under an ended post, on every server,
+// so they drop out of the channels' thread lists. A message in one brings it
+// back, as Discord unarchives a thread on any new message unless a moderator
+// locked it, and so does reopening the post, whose note goes to the threads.
+// The post counts as archived once none of its threads is left to try again.
+func (b *Bot) archiveThreads(p lfg.Post) {
+	var threadIDs []string
+	for _, ref := range p.Messages {
+		if ref.Thread {
+			threadIDs = append(threadIDs, ref.MessageID)
+		}
+	}
+	if b.setArchived(p.ID, threadIDs, true) == 0 {
+		b.store.MarkArchived(p.ID, p.ClosedAt)
+	}
+}
+
 // removePost deletes a post right away, when its leader asks for it. It is
 // closed first, so a copy that can't be deleted at least shows as ended;
 // the 24-hour cleanup retries it later.
@@ -263,12 +289,25 @@ func (b *Bot) deleteMessages(postID string, msgs []lfg.MessageRef) int {
 }
 
 // setArchived archives or reopens threads the bot started, which needs no
-// extra permission unless a moderator locked them.
-func (b *Bot) setArchived(postID string, threadIDs []string, archived bool) {
+// extra permission unless a moderator locked them. It returns how many it
+// couldn't change for now. Threads that are gone or archived already don't
+// count, and neither do those it may not change: a thread a player started
+// is theirs, and a locked one the moderators'.
+func (b *Bot) setArchived(postID string, threadIDs []string, archived bool) int {
+	var mu sync.Mutex
+	failed := 0
 	forEach(threadIDs, func(threadID string) {
 		_, err := b.s.ChannelEditComplex(threadID, &discordgo.ChannelEdit{Archived: &archived})
-		if err != nil && !isGone(err) && restCode(err) != discordgo.ErrCodePerformedOperationOnArchivedThread {
+		switch restCode(err) {
+		case discordgo.ErrCodePerformedOperationOnArchivedThread, discordgo.ErrCodeMissingPermissions, discordgo.ErrCodeThreadIsLocked:
+			return
+		}
+		if err != nil && !isGone(err) {
 			log.Printf("set archived=%v on thread %s of post %s: %v", archived, threadID, postID, err)
+			mu.Lock()
+			failed++
+			mu.Unlock()
 		}
 	})
+	return failed
 }
