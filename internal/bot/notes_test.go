@@ -2,6 +2,8 @@ package bot
 
 import (
 	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +108,33 @@ func TestThreadNotes(t *testing.T) {
 			t.Errorf("%s reminder:\n%s", l, texts)
 		}
 
+		// A player who left is linked where they're a member, with how the
+		// party stands now; the note has no buttons.
+		for _, c := range []struct {
+			r   lfg.Removal
+			key string
+		}{
+			{lfg.Removal{Player: bob, WasAccepted: true}, "thread.left"},
+			{lfg.Removal{Player: bob, WasReserve: true}, "thread.left_reserve"},
+			{lfg.Removal{Player: bob}, "thread.left_applicant"},
+		} {
+			texts, buttons := noteParts(t, b.leaveNote(p, c.r, "g2", l))
+			for _, want := range []string{"### 👋", l.T(c.key, b.runName(p)), "<@B>", "`Bobby`", b.statusLine(p, l)} {
+				if !strings.Contains(texts, want) {
+					t.Errorf("%s leave note (%s) misses %q:\n%s", l, c.key, want, texts)
+				}
+			}
+			if len(buttons) != 0 {
+				t.Errorf("%s leave note has buttons %v", l, buttons)
+			}
+		}
+		rally := p
+		rally.Rally = true
+		texts, _ = noteParts(t, b.leaveNote(rally, lfg.Removal{Player: bob, WasAccepted: true}, "g1", l))
+		if !strings.Contains(texts, l.T("thread.abyss_left", b.runName(rally))) || !strings.Contains(texts, "**Bob**") {
+			t.Errorf("%s leave note of a rally:\n%s", l, texts)
+		}
+
 		after := p
 		after.MinGS, after.Note = 2600, "bring *food*"
 		texts, _ = noteParts(t, b.changesNote(p, after, "g1", l))
@@ -127,6 +156,7 @@ func TestThreadNotesFitDiscordLimits(t *testing.T) {
 			"reserve":  b.joinNote(p, pl, true, "g1", l),
 			"accepted": b.welcomeNote(p, pl, false, "g1", l),
 			"promoted": b.welcomeNote(p, pl, true, "g1", l),
+			"left":     b.leaveNote(p, lfg.Removal{Player: pl, WasAccepted: true}, "g1", l),
 			"reminder": b.reminderNote(p, "g1", l),
 			"changes":  b.changesNote(lfg.Post{}, p, "g1", l),
 		}
@@ -237,5 +267,55 @@ func TestMovePanel(t *testing.T) {
 		if count > maxComponents || textLen > maxTextLength {
 			t.Errorf("%s move panel: %d components, %d characters", l, count, textLen)
 		}
+	}
+}
+
+func TestLeavingIsToldInTheThreadWithoutAPing(t *testing.T) {
+	t.Parallel()
+	f := inviteDiscord()
+	b := goneBot(t, f)
+	p := postWithCard(t, b)
+	b.store.SetThread(p.ID, "m1")
+	// The party is full, and Rex waits as a tank reserve.
+	if _, err := b.store.UpdatePost(p.ID, func(p *lfg.Post) error {
+		p.Missing, p.Status = 0, lfg.StatusFull
+		p.Reserves = []lfg.Player{{UserID: "R", Name: "Rex", ClassID: "templar", RoleID: "tank", GuildID: "g1"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Tom leaves: the thread hears it, pinging nobody, and then welcomes
+	// Rex, who took his slot, with a ping.
+	b.onInteraction(nil, interaction(t, discordgo.InteractionMessageComponent, "T",
+		fmt.Sprintf(`{"custom_id":%q,"component_type":2}`, customID(actLeave, p.ID))))
+	b.syncWG.Wait()
+	cs := i18n.Czech
+	if got := lastAnswer(f); !strings.Contains(got, "Už nejsi v náboru") {
+		t.Errorf("the answer to Tom: %s", got)
+	}
+	notes := sentTo(f, "m1")
+	if len(notes) != 2 {
+		t.Fatalf("the notes in the thread: %q", notes)
+	}
+	var body any
+	if err := json.Unmarshal([]byte(notes[0]), &body); err != nil {
+		t.Fatal(err)
+	}
+	if left := jsonOf(t, body); len(pinged(t, notes[0])) != 0 || !strings.Contains(left, cs.T("thread.left_title")) ||
+		!strings.Contains(left, "<@T>") || !strings.Contains(left, "Parta je plná") {
+		t.Errorf("the note that Tom left: %s", left)
+	}
+	if !slices.Equal(pinged(t, notes[1]), []string{"R"}) || !strings.Contains(notes[1], "Posunul ses") {
+		t.Errorf("Rex's welcome: %s", notes[1])
+	}
+
+	// A player who isn't on the post can't leave it, and the thread hears
+	// nothing.
+	b.onInteraction(nil, interaction(t, discordgo.InteractionMessageComponent, "T",
+		fmt.Sprintf(`{"custom_id":%q,"component_type":2}`, customID(actLeave, p.ID))))
+	b.syncWG.Wait()
+	if notes := sentTo(f, "m1"); len(notes) != 2 {
+		t.Errorf("a second leave was told: %q", notes)
 	}
 }

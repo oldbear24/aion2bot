@@ -389,22 +389,38 @@ func (b *Bot) onLeave(i *discordgo.Interaction, p lfg.Post, userID string) error
 	if userID == p.LeaderID {
 		return b.reply(i, notice(colorClosed, l.T("leave.leader")))
 	}
-	// Leaving only updates the card; the leader was already pinged once. A
-	// reserve who takes the slot is welcomed like an accepted player.
-	p, promoted, err := b.dropPlayer(p.ID, userID)
+	// The threads hear who left, without a ping; the leader was already
+	// pinged once. A reserve who takes the slot is welcomed like an
+	// accepted player.
+	p, r, promoted, err := b.dropPlayer(p.ID, userID)
 	if err != nil {
 		return b.reply(i, notice(colorClosed, errorText(err, l)))
 	}
 	dungeon := b.game.DungeonOrUnknown(p.DungeonID)
 	err = b.reply(i, notice(colorClosed, l.T("leave.done", dungeon.Name)))
+	b.announceLeave(p, r)
 	b.welcome(p, promoted, true)
 	return err
 }
 
-// dropPlayer takes a player off an open post. It returns the reserves who
-// moved up into the slot and weren't welcomed before; the caller welcomes
-// them once it has answered the interaction.
-func (b *Bot) dropPlayer(postID, userID string) (lfg.Post, []lfg.Player, error) {
+// announceLeave tells the threads that already exist under a post that a
+// player left it, pinging nobody.
+func (b *Bot) announceLeave(p lfg.Post, r lfg.Removal) {
+	// The player who left is no longer on the post; they're linked
+	// wherever they're a member all the same.
+	seen := p
+	seen.Applicants = append(slices.Clone(p.Applicants), r.Player)
+	b.learnMembers(seen, p.GuildIDs())
+	b.announce(p, nil, false, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+		return b.leaveNote(p, r, guildID, l)
+	})
+}
+
+// dropPlayer takes a player off an open post. It returns how they were on
+// it, and the reserves who moved up into the slot and weren't welcomed
+// before; the caller welcomes them once it has answered the interaction.
+func (b *Bot) dropPlayer(postID, userID string) (lfg.Post, lfg.Removal, []lfg.Player, error) {
+	var removal lfg.Removal
 	var promoted []lfg.Player
 	p, err := b.store.UpdatePost(postID, func(p *lfg.Post) error {
 		if !p.Active() {
@@ -414,13 +430,13 @@ func (b *Bot) dropPlayer(postID, userID string) (lfg.Post, []lfg.Player, error) 
 		if !ok {
 			return lfg.ErrNotInParty
 		}
-		promoted = firstPings(p, r)
+		removal, promoted = r, firstPings(p, r)
 		return nil
 	})
 	if err == nil {
 		b.scheduleSync(p.ID)
 	}
-	return p, promoted, err
+	return p, removal, promoted, err
 }
 
 // firstPings marks the reserves that moved up into the party as pinged

@@ -262,7 +262,7 @@ func (b *Bot) keepAway(userID, guildID string, network []string, whole bool) (re
 			b.removePost(q.ID)
 			removed++
 		case whole && slices.Contains(network, q.GuildID) && q.Has(userID):
-			if p, promoted, err := b.dropPlayer(q.ID, userID); err == nil {
+			if p, _, promoted, err := b.dropPlayer(q.ID, userID); err == nil {
 				b.welcome(p, promoted, true)
 			}
 		}
