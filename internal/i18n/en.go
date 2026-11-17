@@ -534,7 +534,7 @@ var en = map[string]string{
 	"profile.dm_on":         "Send me a DM",
 	"profile.dm_saved":      "✅ Saved. Your pings now come by DM: check the message I just sent you.",
 	"profile.dm_refused":    "I couldn't send you a DM, so your pings stay in the thread. Allow direct messages from server members in Discord's privacy settings, then try again.",
-	"dm.by_dm":              "### 📩 Your pings come here now\nInstead of pinging you in the thread under a post, I'll message you here: when the first player joins your run or a run is handed to you, when you get into a party, before a run you're in starts, and when a leader invites you or copies a run with you on it. The threads still show it all.\n-# Want them in the thread again? Switch back in %s.",
+	"dm.by_dm":              "### 📩 Your pings come here now\nInstead of pinging you in the thread under a post, I'll message you here: when the first player joins your run or a run is handed to you, when you get into a party, before a run you're in starts, and when a leader copies a run with you on it. Invitations come here anyway. The threads still show it all.\n-# Want them in the thread again? Switch back in %s.",
 
 	// Copying a post to a new start.
 	"manage.copy":          "Copy to a new date",
@@ -564,7 +564,7 @@ var en = map[string]string{
 	"invite.open":                "📨 **Invited, not joined yet (%d):** %s",
 	"invite.more":                "and %d more",
 	"invite.withdraw_ph":         "✖️ Withdraw invitations…",
-	"invite.sent":                "📨 Invited: %s. They're pinged in the thread under the post, or get a DM, with a **Join** button.",
+	"invite.sent":                "📨 Invited: %s. They get a DM with a **Join** button, or a ping in the thread under the post if Discord won't deliver it.",
 	"invite.not_invited":         "-# Not invited: %s",
 	"invite.why_on_post":         "already on the post",
 	"invite.why_invited":         "invited already",

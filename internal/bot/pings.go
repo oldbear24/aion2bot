@@ -12,7 +12,8 @@ import (
 // picked DMs in /profile gets those pings by DM instead; the notes still go
 // to every thread, mentioning them without a ping. A DM that doesn't go
 // through falls back to the ping in the thread, and a ping the thread can't
-// take, as the post has no copy or thread on that server, to a DM.
+// take, as the post has no copy or thread on that server, to a DM. An
+// invitation goes by DM to everyone, as the player isn't on the post yet.
 
 // mentionBatch is how many users one note pings; Discord notifies at most
 // 100 users per message.
@@ -31,7 +32,20 @@ func (b *Bot) wantsDM(userID string) bool {
 // whether it went through. Callers run learnMembers first, as for announce.
 func (b *Bot) pingOrDM(p lfg.Post, pings map[string][]string,
 	note func(guildID string, l i18n.Lang) discordgo.MessageComponent, dm func(guildID, userID string) bool) {
-	pings, tried := b.sendDMs(pings, dm)
+	b.notify(p, pings, b.wantsDM, note, dm)
+}
+
+// dmOrPing is pingOrDM for news every user gets by DM, whatever they picked
+// in /profile: the note pings only those whose DM didn't go through.
+func (b *Bot) dmOrPing(p lfg.Post, pings map[string][]string,
+	note func(guildID string, l i18n.Lang) discordgo.MessageComponent, dm func(guildID, userID string) bool) {
+	b.notify(p, pings, func(string) bool { return true }, note, dm)
+}
+
+// notify is pingOrDM with byDM saying whom to try by DM first.
+func (b *Bot) notify(p lfg.Post, pings map[string][]string, byDM func(userID string) bool,
+	note func(guildID string, l i18n.Lang) discordgo.MessageComponent, dm func(guildID, userID string) bool) {
+	pings, tried := b.sendDMs(pings, byDM, dm)
 	b.dmMissed(pings, b.announce(p, pings, true, note), tried, dm)
 }
 
@@ -43,7 +57,7 @@ func (b *Bot) pingOrDM(p lfg.Post, pings map[string][]string,
 func (b *Bot) pingInBatches(p lfg.Post, pings map[string][]string,
 	note func(guildID string, users []string, first bool, l i18n.Lang) discordgo.MessageComponent,
 	dm func(guildID, userID string) bool) {
-	pings, tried := b.sendDMs(pings, dm)
+	pings, tried := b.sendDMs(pings, b.wantsDM, dm)
 	longest := 0
 	for _, users := range pings {
 		longest = max(longest, len(users))
@@ -62,10 +76,11 @@ func (b *Bot) pingInBatches(p lfg.Post, pings map[string][]string,
 	}
 }
 
-// sendDMs sends dm to the users among pings who want their pings by DM,
-// and returns the pings left for the threads: the other users, and those
-// whose DM didn't go through. tried holds the users it sent one to.
-func (b *Bot) sendDMs(pings map[string][]string, dm func(guildID, userID string) bool) (left map[string][]string, tried map[string]bool) {
+// sendDMs sends dm to the users among pings that byDM picks, and returns
+// the pings left for the threads: the other users, and those whose DM
+// didn't go through. tried holds the users it sent one to.
+func (b *Bot) sendDMs(pings map[string][]string, byDM func(userID string) bool,
+	dm func(guildID, userID string) bool) (left map[string][]string, tried map[string]bool) {
 	type target struct {
 		guildID, userID string
 		sent            bool
@@ -73,7 +88,7 @@ func (b *Bot) sendDMs(pings map[string][]string, dm func(guildID, userID string)
 	var wanted []*target
 	for guildID, users := range pings {
 		for _, id := range users {
-			if b.wantsDM(id) {
+			if byDM(id) {
 				wanted = append(wanted, &target{guildID: guildID, userID: id})
 			}
 		}
