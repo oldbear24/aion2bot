@@ -188,6 +188,33 @@ func TestPlayersWhoPickedDMsGetTheirPingsByDM(t *testing.T) {
 	b.syncWG.Wait()
 }
 
+func TestInvitationsGoByDMToEveryone(t *testing.T) {
+	t.Parallel()
+	// Nobody picked DMs; Discord refuses R's.
+	f := dmDiscord("R")
+	b := goneBot(t, f)
+	p := postWithCard(t, b)
+	b.saveProfile(lfg.Profile{UserID: "S", ByDM: false})
+
+	b.onInteraction(nil, interaction(t, discordgo.InteractionMessageComponent, "L", fmt.Sprintf(`{"custom_id":%q,"component_type":5,
+		"values":["U","S","R"],
+		"resolved":{"users":{"U":{"id":"U","username":"una"},"S":{"id":"S","username":"sam"},"R":{"id":"R","username":"rex"}}}}`,
+		customID(actInvite, p.ID))))
+	b.syncWG.Wait()
+
+	for _, id := range []string{"U", "S", "R"} {
+		if dms := sentTo(f, "dm-"+id); len(dms) != 1 || !strings.Contains(dms[0], customID(actJoin, p.ID)) ||
+			!strings.Contains(dms[0], "Máš pozvánku") {
+			t.Errorf("%s's invitation by DM was tried %d times: %q", id, len(dms), dms)
+		}
+	}
+	// The note in the thread pings only R, whose DM didn't go through.
+	notes := sentTo(f, "m1")
+	if len(notes) != 1 || !slices.Equal(pinged(t, notes[0]), []string{"R"}) || !strings.Contains(notes[0], customID(actJoin, p.ID)) {
+		t.Fatalf("the invitation in the thread: %q", notes)
+	}
+}
+
 func TestPingsInBatchesGoByDMWhereTheyShould(t *testing.T) {
 	t.Parallel()
 	// B, C, E and F picked DMs; Discord refuses C's and F's. The post has

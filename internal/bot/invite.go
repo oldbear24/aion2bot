@@ -14,8 +14,9 @@ import (
 )
 
 // The leader invites players to an open post from Manage, with Discord's
-// member picker. Each is pinged in the thread under the post on the server
-// they were invited on, or gets a DM, with a Join button. Once they join,
+// member picker. Each gets a DM with a Join button, or, if Discord refuses
+// it, is pinged in the thread under the post on the server they were
+// invited on. Once they join,
 // they are in the party straight away while it has room, whatever role and
 // class they bring and whatever the post asks for gear score; once it is
 // full, they join as reserves. The leader can withdraw invitations until
@@ -161,8 +162,9 @@ func inviteSummary(sent []lfg.Invite, skipped map[string][]string, l i18n.Lang) 
 	return strings.Join(lines, "\n")
 }
 
-// sendInvites pings the invited players in the thread under the post on
-// the server they were invited on, or by DM. The note shows in the threads
+// sendInvites sends the invited players a DM, whatever they picked in
+// /profile, and pings those Discord refuses it to in the thread under the
+// post on the server they were invited on. The note shows in the threads
 // on every server.
 func (b *Bot) sendInvites(p lfg.Post, invites []lfg.Invite) {
 	now := time.Now()
@@ -175,7 +177,7 @@ func (b *Bot) sendInvites(p lfg.Post, invites []lfg.Invite) {
 		pings[inv.GuildID] = append(pings[inv.GuildID], inv.UserID)
 	}
 	b.learnMembers(p, p.GuildIDs())
-	b.pingOrDM(p, pings, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
+	b.dmOrPing(p, pings, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
 		return b.inviteNote(p, invites, guildID, l)
 	}, func(guildID, userID string) bool {
 		return b.dm(userID, b.inviteDM(p, b.guildLang(guildID)))

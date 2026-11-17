@@ -83,8 +83,8 @@ It uses Discord's new components:
      the players waiting and the reserves are pinged again once they get into the party. Players blocked on the server they joined from, or on the post's,
      stay behind, and their slots open as when anyone leaves. A copy that's full already doesn't ping the servers' roles or send `/lfg-notify` alerts.
      It counts towards `max_runs_per_leader` like any run.
-   - **Invite players** (📨) with the member picker, up to 10 at once and 25 open invitations: each is pinged in the thread under the post on the server
-     they were invited on, or gets a DM, with a **Join** button. Once they join, from there, the card, `/lfg-find` or `/lfg-mine`, they're in the party
+   - **Invite players** (📨) with the member picker, up to 10 at once and 25 open invitations: each gets a DM with a **Join** button, whatever they picked
+     in `/profile`, or, if Discord refuses it, is pinged in the thread under the post on the server they were invited on. Once they join, from there, the card, `/lfg-find` or `/lfg-mine`, they're in the party
      straight away while it has room, with any role and class and whatever the post asks for gear score; once it's full, they join as reserves.
      Their faction, a rally's game server and blocks still count. The leader is pinged for the first player as usual, and sees the open invitations
      in **Manage**, where they can withdraw them. The picker offers the members of the server **Manage** was opened on; players elsewhere can still join from the card.
@@ -95,7 +95,7 @@ It uses Discord's new components:
    - The one exception is the **reminder** `reminder_minutes` before a planned start: the leader and the players accepted by then are pinged once more.
      Players accepted later were told the start already, and anyone can turn reminders off in `/profile`.
    - **Pings by DM.** A player who'd rather get these pings privately picks DMs in `/profile`: the leader's first player, being accepted or moving up,
-     the reminder, a run handed over to them, an invitation and a copy they came along to then come by DM, with the same buttons (⚙️ **Manage**, **Join**, **Leave**).
+     the reminder, a run handed over to them and a copy they came along to then come by DM (invitations always do), with the same buttons (⚙️ **Manage**, **Join**, **Leave**).
      The notes still go to every thread, mentioning them without a ping. Picking DMs sends a first one, and only a DM that goes through turns them on:
      Discord refuses DMs to players who don't take them from server members, and the panel says what to change. A DM that fails later falls back to the ping in the thread.
    - What players write in one thread is relayed to the threads on the other servers, under the player's name and avatar (through a webhook in the LFG channel).

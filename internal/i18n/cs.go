@@ -542,7 +542,7 @@ var cs = map[string]string{
 	"profile.dm_on":         "Napiš mi do soukromých zpráv",
 	"profile.dm_saved":      "✅ Uloženo. Upozornění ti teď budou chodit do soukromých zpráv – první zprávu už tam máš.",
 	"profile.dm_refused":    "Nepodařilo se mi ti napsat, takže upozornění zůstávají ve vláknu. V nastavení soukromí na Discordu povol přímé zprávy od členů serveru a pak to zkus znovu.",
-	"dm.by_dm":              "### 📩 Upozornění ti teď budou chodit sem\nMísto zmínky ve vláknu pod náborem ti napíšu sem: když se do tvého náboru přidá první hráč nebo ti někdo nábor předá, když se dostaneš do party, před začátkem náboru, ve kterém jsi, a když tě vedoucí pozve nebo zkopíruje nábor i s tebou. Ve vláknech se dál ukazuje všechno.\n-# Chceš je zase ve vláknu? Přepneš to v %s.",
+	"dm.by_dm":              "### 📩 Upozornění ti teď budou chodit sem\nMísto zmínky ve vláknu pod náborem ti napíšu sem: když se do tvého náboru přidá první hráč nebo ti někdo nábor předá, když se dostaneš do party, před začátkem náboru, ve kterém jsi, a když vedoucí zkopíruje nábor i s tebou. Pozvánky ti sem chodí tak jako tak. Ve vláknech se dál ukazuje všechno.\n-# Chceš je zase ve vláknu? Přepneš to v %s.",
 
 	// Kopírování náboru na nový termín.
 	"manage.copy":          "Zkopírovat na jiný termín",
@@ -572,7 +572,7 @@ var cs = map[string]string{
 	"invite.open":                "📨 **Pozvaní, zatím nepřidaní (%d):** %s",
 	"invite.more":                "a dalších %d",
 	"invite.withdraw_ph":         "✖️ Zrušit pozvánky…",
-	"invite.sent":                "📨 Pozváni: %s. Dostanou zmínku ve vláknu pod náborem, nebo DM, s tlačítkem **Přidat se**.",
+	"invite.sent":                "📨 Pozváni: %s. Dostanou DM s tlačítkem **Přidat se**, a pokud jim ho Discord nedoručí, zmínku ve vláknu pod náborem.",
 	"invite.not_invited":         "-# Nepozváni: %s",
 	"invite.why_on_post":         "už jsou v náboru",
 	"invite.why_invited":         "už pozvaní",

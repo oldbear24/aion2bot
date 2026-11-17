@@ -313,8 +313,12 @@ func TestInviteFlow(t *testing.T) {
 	if answer := lastAnswer(f); !strings.Contains(answer, "Unicorn") || !strings.Contains(answer, "robot") || !strings.Contains(answer, "tom") {
 		t.Errorf("the panel doesn't say whom it invited and whom not:\n%s", answer)
 	}
+	// The invitation comes by DM; the note in the thread pings nobody.
+	if dms := sentTo(f, "dm"); len(dms) != 1 || !strings.Contains(dms[0], customID(actJoin, p.ID)) {
+		t.Fatalf("the invitation by DM: %q", dms)
+	}
 	notes := sentTo(f, "m1")
-	if len(notes) != 1 || !strings.Contains(notes[0], `"users":["U"]`) || !strings.Contains(notes[0], customID(actJoin, p.ID)) {
+	if len(notes) != 1 || len(pinged(t, notes[0])) != 0 || !strings.Contains(notes[0], customID(actJoin, p.ID)) {
 		t.Fatalf("the invitation in the thread: %q", notes)
 	}
 
