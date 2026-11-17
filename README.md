@@ -255,7 +255,7 @@ The list covers what is live on the **global** version as of 31 October 2026:
 - **Expedition (5 players):** Krao Cave, Draupnir, Urugugu Canyon, Fire Temple, Vakron Sky Island, Ferocious Horn Den. Exploration / Conquest, plus Conquest [Hard] on Krao Cave and Draupnir (GS 2,600) and on Urugugu Canyon and Vakron Sky Island (GS 2,700, since 28 October).
 - **Transcendence (5 players):** Deus Research Base, Shattered Arkanis. Stages 1–4.
 - **Subjugation (4 players):** Dredgion Depot. Easy / Normal / Hard.
-- **Sanctuary raid (10 players):** Abyssal Forge: Ludra. Normal (GS 2,800) / Hard (GS 3,000), both open from 4 November.
+- **Sanctuary raid (10 players):** Abyssal Forge: Ludra. Normal (GS 2,800) / Hard (GS 3,000), both open from 4 November, and Easy (GS 2,800).
 
 Content only in the client files (Chalice of Muspel, Corroded Decontamination Facility, other hard modes) is left out; add it when it opens on global.
 
