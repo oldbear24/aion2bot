@@ -92,6 +92,7 @@ It uses Discord's new components:
    - Its notes go to every thread, in each server's language, as small cards like the post: a heading, who it's for, then the details
      (the player who joined with a ⚙️ **Manage** button, the role and start for an accepted player, the party by role in the reminder). Everyone is pinged **once** per run, on the server they posted or joined from:
      the leader when the first player joins, each player when they're accepted (or move up from the reserves). After that, changes only edit the card, which never notifies anyone.
+     A player who clicks **Leave** gets a note too, without a ping: who left the party, the reserves or the waiting list, and how the party stands now.
    - The one exception is the **reminder** `reminder_minutes` before a planned start: the leader and the players accepted by then are pinged once more.
      Players accepted later were told the start already, and anyone can turn reminders off in `/profile`.
    - **Pings by DM.** A player who'd rather get these pings privately picks DMs in `/profile`: the leader's first player, being accepted or moving up,

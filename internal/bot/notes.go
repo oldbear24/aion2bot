@@ -64,6 +64,25 @@ func (b *Bot) welcomeNote(p lfg.Post, pl lfg.Player, promoted bool, guildID stri
 	)
 }
 
+// leaveNote tells the threads a player left the post: the party, the
+// reserves, or the players waiting for the leader. It shows how the party
+// stands now; a reserve who moved up into the slot gets a welcome of their
+// own.
+func (b *Bot) leaveNote(p lfg.Post, r lfg.Removal, guildID string, l i18n.Lang) discordgo.MessageComponent {
+	intro := "thread.left_applicant"
+	switch {
+	case r.WasAccepted:
+		intro = textFor("thread.left", p.Rally)
+	case r.WasReserve:
+		intro = "thread.left_reserve"
+	}
+	return container(colorClosed,
+		text(l.T("thread.left_title")+"\n"+l.T(intro, b.runName(p))+"\n"+b.memberLine(p, r.Player, guildID, false, l)),
+		divider(),
+		text(b.statusLine(p, l)),
+	)
+}
+
 // reminderNote tells the party the run starts soon, and lists who is in
 // it, by role. The roster shows the leader's character name, so it needs
 // no line of its own.

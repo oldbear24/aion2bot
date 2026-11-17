@@ -434,6 +434,7 @@ func (p *Post) Accept(userIDs []string) ([]Player, error) {
 type Removal struct {
 	Player      Player
 	WasAccepted bool
+	WasReserve  bool
 	// Promoted is the reserve who took the freed slot in the party.
 	Promoted *Player
 }
@@ -442,8 +443,9 @@ type Removal struct {
 // the first reserve with the same role, or in a rally to the first
 // reserve; without one, it opens again.
 func (p *Post) Remove(userID string) (Removal, bool) {
+	reserve := p.IsReserve(userID)
 	if pl, ok := p.takeWaiting(userID); ok {
-		return Removal{Player: pl}, true
+		return Removal{Player: pl, WasReserve: reserve}, true
 	}
 	i := indexOf(p.Accepted, userID)
 	if i < 0 {

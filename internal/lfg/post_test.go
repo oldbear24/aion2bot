@@ -85,6 +85,9 @@ func TestReserveTakesFreedSlot(t *testing.T) {
 	if !p.FilledAt.Equal(filled) {
 		t.Fatal("filling again must not move the time the party first filled")
 	}
+	if r, ok := p.Remove("healer3"); !ok || !r.WasReserve || r.WasAccepted || r.Promoted != nil {
+		t.Fatalf("reserve left: %+v", r)
+	}
 
 	// Reserves count towards the players waiting.
 	for n := len(p.Reserves); n < MaxApplicants; n++ {
