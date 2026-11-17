@@ -7,7 +7,8 @@
     { "id": "abyssal-forge-ludra", "name": "Abyssal Forge: Ludra", "emoji": "🏛️", "party_size": 10, "description": "Sanctuary raid",
       "modes": [
         { "id": "conquest", "name": "Normal", "gs": 2800 },
-        { "id": "hard", "name": "Hard", "gs": 3000 }
+        { "id": "hard", "name": "Hard", "gs": 3000 },
+        { "id": "easy", "name": "Easy", "gs": 2800 }
       ] },
 
     { "id": "dredgion-depot", "name": "Dredgion Depot", "emoji": "⚓", "party_size": 4, "description": "Subjugation",
