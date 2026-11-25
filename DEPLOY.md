@@ -85,11 +85,22 @@ The database is small. Stop the bot for a moment so the copy is consistent:
 ```sh
 docker compose stop
 docker run --rm -v aion2bot_data:/data -v "$PWD":/backup alpine \
-  sh -c 'cp /data/aion2bot.db /backup/aion2bot-$(date +%F).db'
+  sh -c 'mkdir -p /backup/aion2bot-$(date +%F) && cp /data/aion2bot.db* /backup/aion2bot-$(date +%F)/'
 docker compose start
 ```
 
-To restore, stop the bot, copy a backup back as `/data/aion2bot.db` the same way, and start it again.
+The backup is a folder, as the database can be more than one file: next to `aion2bot.db`, a bot that didn't stop cleanly
+leaves its latest changes in `aion2bot.db-wal`.
+
+To restore, stop the bot, replace the database with the files of one backup, and start it again:
+
+```sh
+docker compose stop
+docker run --rm -v aion2bot_data:/data -v "$PWD":/backup alpine \
+  sh -c 'rm -f /data/aion2bot.db* && cp /backup/aion2bot-2026-11-25/* /data/ && chown 65532:65532 /data/aion2bot.db*'
+docker compose start
+```
+
 Compose names the volume `<folder>_data`, so `aion2bot_data` for a folder named `aion2bot` (`docker volume ls` shows it).
 
 ## 6. Moving from the Windows .exe
