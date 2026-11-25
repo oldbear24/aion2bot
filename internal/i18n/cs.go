@@ -287,7 +287,7 @@ var cs = map[string]string{
 	"setup.not_linked":  "\n-# Server zatím není propojený s dalšími, takže se tu objeví jen nábory odsud. Servery propojíš přes `/lfg-network`.",
 	"setup.sending":     "\nPosílám sem právě otevřené nábory: %s…",
 	"disable.none":      "Tento server nábory nedostává. Zapneš je přes `/lfg-setup`.",
-	"disable.done":      "Nábory jsou na tomto serveru vypnuté. Ty, které už v kanálu jsou, se budou aktualizovat, dokud neskončí.",
+	"disable.done":      "Nábory jsou na tomto serveru vypnuté. Ty, které jsou v jeho kanálu, se odstraní i se svými vlákny.",
 	"perm.view":         "Zobrazit kanál",
 	"perm.view.why":     "abych kanál viděl",
 	"perm.send":         "Odesílat zprávy",
@@ -325,8 +325,8 @@ var cs = map[string]string{
 	"net.created":    "✅ Síť je vytvořená. Pošli kód správcům serverů, které chceš propojit — použijí `/lfg-network join`.",
 	"net.joined":     "✅ Propojeno! Nábory se teď sdílí mezi těmito servery.",
 	"net.none":       "Tento server není propojený s dalšími, nábory odsud se zobrazují jen tady.\nZaložit síť můžeš přes `/lfg-network create`, nebo se připoj přes `/lfg-network join` s kódem od jiného serveru.",
-	"net.left":       "Server opustil síť **%s**. Nové nábory odsud zůstanou tady a nábory ze sítě už chodit nebudou.\n-# Nábory, které už v kanálu jsou, se aktualizují, dokud neskončí.",
-	"net.removed":    "✅ Server odebrán. Zvaž `/lfg-network new-code`, aby se nemohl vrátit se starým kódem.",
+	"net.left":       "Server opustil síť **%s**. Nové nábory odsud zůstanou tady a nábory ze sítě už chodit nebudou.\n-# Nábory ze sítě se z tohoto kanálu odstraní a nábory z tohoto serveru zmizí ze serverů sítě, i se svými vlákny.",
+	"net.removed":    "✅ Server odebrán. Nábory sdílené s ním se na obou stranách odstraní i se svými vlákny. Zvaž `/lfg-network new-code`, aby se nemohl vrátit se starým kódem.",
 	"net.new_code":   "✅ Nový kód. Starý už neplatí.",
 	"net.owner":      " *(vlastník)*",
 	"net.this":       " — *tento server*",
@@ -414,6 +414,7 @@ var cs = map[string]string{
 	"draft.bad_start":    "Začátek napiš jako 21.09.2026 10:15, nebo jen 10:15. Když necháš prázdné, začíná se, jakmile bude parta plná.",
 	// Start time and time zones.
 	"draft.start_past":       "Tenhle začátek už uplynul. Zadej pozdější.",
+	"draft.start_far":        "Tenhle začátek je víc než dva měsíce daleko. Zkontroluj datum, nebo zadej dřívější.",
 	"profile.tz_ph":          "Tvoje časové pásmo",
 	"tz.UTC":                 "UTC",
 	"tz.Europe/London":       "Velká Británie, Irsko, Portugalsko (Londýn)",
@@ -510,6 +511,7 @@ var cs = map[string]string{
 	"dm.mod_handed":        "🛠️ Moderátoři serveru *%[2]s* předali tvůj nábor %[1]s někomu z party.",
 	"blocked.post":         "Z tohoto serveru nemůžeš zakládat nábory: moderátoři tě zablokovali.",
 	"blocked.join":         "Do tohoto náboru se přidat nemůžeš: jsi zablokovaný na tomto serveru, nebo na serveru, kde nábor vznikl.",
+	"blocked.reopen":       "Tenhle nábor znovu otevřít nemůžeš: na serveru, kde vznikl, jsi zablokovaný.",
 
 	// /lfg-blocks.
 	"cmd.blocks":        "Ukáže hráče zablokované na tomto serveru a zruší blokování (moderátoři)",

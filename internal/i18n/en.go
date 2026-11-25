@@ -279,7 +279,7 @@ var en = map[string]string{
 	"setup.not_linked":  "\n-# This server isn't linked to others yet, so only posts made here appear. Link servers with `/lfg-network`.",
 	"setup.sending":     "\nSending the posts open right now: %s…",
 	"disable.none":      "This server isn't receiving LFG posts. Use `/lfg-setup` to turn them on.",
-	"disable.done":      "LFG posts are turned off for this server. Posts already in the channel keep updating until they end.",
+	"disable.done":      "LFG posts are turned off for this server. The posts in its channel are taken down, with their threads.",
 	"perm.view":         "View Channel",
 	"perm.view.why":     "to see the channel",
 	"perm.send":         "Send Messages",
@@ -317,8 +317,8 @@ var en = map[string]string{
 	"net.created":    "✅ Network created. Send the join code to the admins of the servers you want to link; they run `/lfg-network join`.",
 	"net.joined":     "✅ Linked! Posts are now shared between these servers.",
 	"net.none":       "This server isn't linked to other servers, so posts made here only appear here.\nStart a network with `/lfg-network create`, or join one with `/lfg-network join` and a code from another server.",
-	"net.left":       "You left **%s**. New posts made here stay on this server, and posts from the network no longer arrive.\n-# Posts already in the channel keep updating until they end.",
-	"net.removed":    "✅ Server removed. Consider `/lfg-network new-code` so it can't rejoin with the old code.",
+	"net.left":       "You left **%s**. New posts made here stay on this server, and posts from the network no longer arrive.\n-# The network's posts are taken out of this channel, and this server's posts off the network's servers, with their threads.",
+	"net.removed":    "✅ Server removed. The posts shared with it are taken down on both sides, with their threads. Consider `/lfg-network new-code` so it can't rejoin with the old code.",
 	"net.new_code":   "✅ New join code. The old one no longer works.",
 	"net.owner":      " *(owner)*",
 	"net.this":       " — *this server*",
@@ -406,6 +406,7 @@ var en = map[string]string{
 	"draft.bad_start":    "Write the start like 21.09.2026 10:15, or just 10:15. Leave it empty to start as soon as the party is full.",
 	// Start time and time zones.
 	"draft.start_past":       "That start time has already passed. Pick a later one.",
+	"draft.start_far":        "That start is more than two months away. Check the date, or pick an earlier one.",
 	"profile.tz_ph":          "Your time zone",
 	"tz.UTC":                 "UTC",
 	"tz.Europe/London":       "UK, Ireland, Portugal (London)",
@@ -502,6 +503,7 @@ var en = map[string]string{
 	"dm.mod_handed":        "🛠️ The moderators of *%[2]s* handed your %[1]s post to a party member.",
 	"blocked.post":         "You can't post runs from this server: its moderators blocked you.",
 	"blocked.join":         "You can't join this run: you're blocked on this server, or on the server it was posted on.",
+	"blocked.reopen":       "You can't reopen this run: you're blocked on the server it was posted on.",
 
 	// /lfg-blocks.
 	"cmd.blocks":        "List the players blocked on this server and lift blocks (moderators)",

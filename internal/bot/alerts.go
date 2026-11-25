@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"log"
 	"slices"
 	"strings"
 
@@ -130,8 +131,29 @@ func (b *Bot) sendAlerts(postID string) {
 	}
 	forEach(due, func(a lfg.Alert) {
 		ref, _ := p.MessageIn(a.GuildID)
-		b.dm(a.UserID, b.alertDM(p, ref, i18n.Parse(a.Lang)))
+		b.alertSent(a.UserID, b.tryDM(a.UserID, b.alertDM(p, ref, i18n.Parse(a.Lang))))
 	})
+}
+
+// alertRefusals is how many DMs in a row Discord has to refuse before the
+// bot turns a player's alert off.
+const alertRefusals = 3
+
+// alertSent keeps track of whether a player's alerts reach them. Discord
+// refuses the DM of a player who left the servers they shared with the bot,
+// closed their DMs or blocked it; nobody else turns their alert off, and the
+// bot would go on trying for every post that matches. A DM that failed some
+// other way says nothing about the player.
+func (b *Bot) alertSent(userID string, err error) {
+	switch {
+	case err == nil:
+		b.store.AlertDelivered(userID)
+	case restCode(err) == discordgo.ErrCodeCannotSendMessagesToThisUser:
+		if b.store.AlertRefused(userID) >= alertRefusals {
+			b.store.RemoveAlert(userID)
+			log.Printf("turned off the alert of %s: Discord refused %d DMs in a row", userID, alertRefusals)
+		}
+	}
 }
 
 // alertMatches reports whether a post is one the alert asks for: one of

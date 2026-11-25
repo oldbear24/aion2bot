@@ -152,6 +152,25 @@ func parseStart(s string, loc *time.Location, now time.Time) (time.Time, error) 
 	return t, nil
 }
 
+// maxStartAhead is how far ahead a run can be planned. A post stays up until
+// after its start, so a slip in the year would keep it up for good.
+const maxStartAhead = 60 * 24 * time.Hour
+
+// startProblem says what is wrong with a start a leader typed, as the key of
+// the text that tells them: it has passed, or is too far away. A start that
+// will do, or none, has no problem.
+func startProblem(at, now time.Time) string {
+	switch {
+	case at.IsZero():
+		return ""
+	case !at.After(now):
+		return "draft.start_past"
+	case at.After(now.Add(maxStartAhead)):
+		return "draft.start_far"
+	}
+	return ""
+}
+
 // postStart is the start of a post as startText shows it. A rally without
 // one gathers right away rather than once the party is full.
 func postStart(p lfg.Post, l i18n.Lang) string {

@@ -1,6 +1,7 @@
 package lfg
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
@@ -47,7 +48,7 @@ func (s *Store) SetAlert(a Alert) error {
 	}
 	_, err = s.db.Exec(`INSERT INTO alerts (user_id, guild_id, lang, dungeons, choices, updated_at) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET guild_id = excluded.guild_id, lang = excluded.lang,
-			dungeons = excluded.dungeons, choices = excluded.choices, updated_at = excluded.updated_at`,
+			dungeons = excluded.dungeons, choices = excluded.choices, updated_at = excluded.updated_at, dm_refused = 0`,
 		a.UserID, a.GuildID, orEnglish(a.Lang), string(dungeons), string(choices), millis(time.Now()))
 	return err
 }
@@ -55,6 +56,24 @@ func (s *Store) SetAlert(a Alert) error {
 func (s *Store) RemoveAlert(userID string) {
 	if _, err := s.db.Exec(`DELETE FROM alerts WHERE user_id = ?`, userID); err != nil {
 		log.Printf("store: remove alert of %s: %v", userID, err)
+	}
+}
+
+// AlertRefused records that Discord refused an alert's DM, and returns how
+// many were refused in a row.
+func (s *Store) AlertRefused(userID string) int {
+	var n int
+	err := s.db.QueryRow(`UPDATE alerts SET dm_refused = dm_refused + 1 WHERE user_id = ? RETURNING dm_refused`, userID).Scan(&n)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("store: count the refused alert of %s: %v", userID, err)
+	}
+	return n
+}
+
+// AlertDelivered records that an alert's DM went through.
+func (s *Store) AlertDelivered(userID string) {
+	if _, err := s.db.Exec(`UPDATE alerts SET dm_refused = 0 WHERE user_id = ? AND dm_refused > 0`, userID); err != nil {
+		log.Printf("store: reset the refused alerts of %s: %v", userID, err)
 	}
 }
 

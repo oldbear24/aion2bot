@@ -866,3 +866,96 @@ func TestBlocks(t *testing.T) {
 		t.Fatal("a network block outlived the server's membership")
 	}
 }
+
+// A change that panics is caught by the handler that asked for it; the
+// store has one connection, which the open transaction must give back.
+func TestPanicInAChangeLeavesTheStoreUsable(t *testing.T) {
+	s, _ := openTestStore(t)
+	p, err := s.CreatePost(newPost(1), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() { recover() }()
+		s.UpdatePost(p.ID, func(p *Post) error {
+			p.Note = "half done"
+			panic("boom")
+		})
+	}()
+
+	read := make(chan Post, 1)
+	go func() {
+		got, _ := s.Post(p.ID)
+		read <- got
+	}()
+	select {
+	case got := <-read:
+		if got.ID != p.ID || got.Note != p.Note {
+			t.Errorf("post after the panic: %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the store is stuck behind the transaction that panicked")
+	}
+}
+
+// Deleting a post deletes what was relayed under it; without an index on the
+// post, every delete would read those tables from end to end.
+func TestRelayTablesAreIndexedByPost(t *testing.T) {
+	s, _ := openTestStore(t)
+	for _, table := range []string{"relays", "relayed", "reactions"} {
+		var plan string
+		rows, err := s.db.Query(`EXPLAIN QUERY PLAN SELECT 1 FROM ` + table + ` WHERE post_id = 'p'`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			plan += detail
+		}
+		rows.Close()
+		if !strings.Contains(plan, "USING") || !strings.Contains(plan, "INDEX "+table+"_by_post") {
+			t.Errorf("%s by post: %s", table, plan)
+		}
+	}
+}
+
+// Who was sent an invitation is kept with the post, also once the invitation
+// is withdrawn.
+func TestInvitedPlayersAreRemembered(t *testing.T) {
+	s, _ := openTestStore(t)
+	p, err := s.CreatePost(newPost(1), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, again := false, true
+	if _, err := s.UpdatePost(p.ID, func(p *Post) error {
+		if err := p.Invite(Invite{UserID: "u1", Name: "Una", GuildID: "g1"}); err != nil {
+			return err
+		}
+		first = p.MarkInvited("u1")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.UpdatePost(p.ID, func(p *Post) error {
+		p.Uninvite("u1")
+		if err := p.Invite(Invite{UserID: "u1", Name: "Una", GuildID: "g1"}); err != nil {
+			return err
+		}
+		again = p.MarkInvited("u1")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first || again || !slices.Equal(got.Invited, []string{"u1"}) || !got.IsInvited("u1") {
+		t.Errorf("first %v, again %v, post %+v", first, again, got)
+	}
+	if c := got.Copy(CopyEveryone, time.Now().Add(time.Hour), "", time.Hour, time.Now(), nil); len(c.Invited) != 0 {
+		t.Errorf("a copy remembers the invitations of the post it was made from: %v", c.Invited)
+	}
+}

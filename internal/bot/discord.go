@@ -148,6 +148,12 @@ func (b *Bot) edit(channelID, messageID string, comps []discordgo.MessageCompone
 
 // dm is best effort: many users only accept DMs from friends.
 func (b *Bot) dm(userID string, comps ...discordgo.MessageComponent) bool {
+	return b.tryDM(userID, comps...) == nil
+}
+
+// tryDM is dm for callers that tell a DM Discord refused, which fails with
+// ErrCodeCannotSendMessagesToThisUser, from one that didn't get through.
+func (b *Bot) tryDM(userID string, comps ...discordgo.MessageComponent) error {
 	ch, err := b.s.UserChannelCreate(userID)
 	if err == nil {
 		_, err = b.send(ch.ID, comps, noMentions)
@@ -155,7 +161,7 @@ func (b *Bot) dm(userID string, comps ...discordgo.MessageComponent) bool {
 	if err != nil && restCode(err) != discordgo.ErrCodeCannotSendMessagesToThisUser {
 		log.Printf("dm %s: %v", userID, err)
 	}
-	return err == nil
+	return err
 }
 
 func restCode(err error) int {

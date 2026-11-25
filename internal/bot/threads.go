@@ -4,6 +4,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -116,22 +117,105 @@ func (b *Bot) startThreads(p lfg.Post, refs []lfg.MessageRef) {
 	b.addToThreads(started, p.People())
 }
 
-// renameThreads names the threads under a post after its dungeon and mode
-// again, reopening archived ones. Discord allows two renames per thread
-// in ten minutes and makes a third wait, so callers run this on its own.
-func (b *Bot) renameThreads(p lfg.Post) {
+// Discord allows two renames per thread in ten minutes and makes a third
+// wait for the rest of them.
+const (
+	// A rename that is told to wait tries again after at least this long.
+	renameWaitMin = time.Second
+	// And after at most this long, whatever Discord says.
+	renameWaitMax = 15 * time.Minute
+)
+
+// scheduleRename names the threads under a post after its dungeon, mode and
+// leader again, reopening archived ones. It runs on its own, as a rename
+// may have to wait for minutes. Renames of the same post never overlap: one
+// asked for while another waits takes its place, so the threads end up with
+// the name the post has by then, and a leader who keeps changing the post
+// keeps one rename waiting, not one per change.
+func (b *Bot) scheduleRename(postID string) {
+	b.renameMu.Lock()
+	defer b.renameMu.Unlock()
+	if st, running := b.renames[postID]; running {
+		st.dirty = true
+		return
+	}
+	if b.renames == nil {
+		b.renames = map[string]*syncState{}
+	}
+	st := &syncState{}
+	b.renames[postID] = st
+	go b.runRename(postID, st)
+}
+
+func (b *Bot) runRename(postID string, st *syncState) {
+	defer func() {
+		b.renameMu.Lock()
+		defer b.renameMu.Unlock()
+		if b.renames[postID] == st {
+			delete(b.renames, postID)
+		}
+	}()
 	defer guard("renaming threads")
-	name, open := b.threadName(p), false
-	forEach(p.Messages, func(ref lfg.MessageRef) {
-		if !ref.Thread {
+	// The threads still to rename; none means all of them.
+	var only []string
+	for {
+		p, ok := b.store.Post(postID)
+		if !ok {
 			return
 		}
-		_, err := b.s.ChannelEditComplex(ref.MessageID, &discordgo.ChannelEdit{Name: name, Archived: &open})
+		limited, wait := b.renameThreads(p, only)
+		if len(limited) > 0 {
+			select {
+			case <-b.stop:
+				return
+			case <-time.After(wait):
+			}
+		}
+
+		b.renameMu.Lock()
+		again := st.dirty
+		st.dirty = false
+		if !again && len(limited) == 0 {
+			delete(b.renames, postID)
+			b.renameMu.Unlock()
+			return
+		}
+		b.renameMu.Unlock()
+		if only = limited; again {
+			only = nil
+		}
+	}
+}
+
+// renameThreads names the given threads under a post, or all of them, and
+// returns those Discord wants to wait with, and for how long.
+//
+// The renames have a rate limit bucket of their own. In the one discordgo
+// keeps per thread, a rename told to wait ten minutes would make archiving
+// and deleting that thread wait just as long, and the cleanup with them.
+func (b *Bot) renameThreads(p lfg.Post, only []string) (limited []string, wait time.Duration) {
+	name, open := b.threadName(p), false
+	var mu sync.Mutex
+	forEach(p.Messages, func(ref lfg.MessageRef) {
+		if !ref.Thread || len(only) > 0 && !slices.Contains(only, ref.MessageID) {
+			return
+		}
+		endpoint := discordgo.EndpointChannel(ref.MessageID)
+		_, err := b.s.RequestWithBucketID("PATCH", endpoint, &discordgo.ChannelEdit{Name: name, Archived: &open},
+			endpoint+"#rename", discordgo.WithRetryOnRatelimit(false))
+		var limit *discordgo.RateLimitError
+		switch {
+		case errors.As(err, &limit):
+			mu.Lock()
+			defer mu.Unlock()
+			limited = append(limited, ref.MessageID)
+			wait = max(wait, limit.RetryAfter)
 		// A thread a player started is theirs to name.
-		if err != nil && !isGone(err) && restCode(err) != discordgo.ErrCodeMissingPermissions {
+		case err != nil && !isGone(err) && restCode(err) != discordgo.ErrCodeMissingPermissions:
 			log.Printf("rename thread %s of post %s: %v", ref.MessageID, p.ID, err)
 		}
 	})
+	return limited, min(max(wait, renameWaitMin), renameWaitMax)
 }
 
 // addToThreads adds people to the threads under a post's copies, on each

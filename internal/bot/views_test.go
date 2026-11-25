@@ -1028,3 +1028,30 @@ func TestCardShowsStartAsTimestamp(t *testing.T) {
 		t.Error("posts from before the date field lose their start text")
 	}
 }
+
+// A start has to be still to come, and not so far away that the post, which
+// stays up until after it, would never end.
+func TestStartProblem(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		at   time.Time
+		want string
+	}{
+		{time.Time{}, ""},
+		{now.Add(time.Minute), ""},
+		{now.Add(maxStartAhead), ""},
+		{now, "draft.start_past"},
+		{now.Add(-time.Hour), "draft.start_past"},
+		{now.Add(maxStartAhead + time.Minute), "draft.start_far"},
+		{time.Date(2062, 9, 21, 10, 15, 0, 0, time.UTC), "draft.start_far"},
+	} {
+		if got := startProblem(c.at, now); got != c.want {
+			t.Errorf("startProblem(%v) = %q, want %q", c.at, got, c.want)
+		}
+	}
+	for _, l := range i18n.Langs {
+		if text := l.T("draft.start_far"); text == "" || text == "draft.start_far" {
+			t.Errorf("%s has no text for a start too far away", l)
+		}
+	}
+}

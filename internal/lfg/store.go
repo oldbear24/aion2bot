@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS relays (
 	webhook_token TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS relays_by_source ON relays (source_id);
+CREATE INDEX IF NOT EXISTS relays_by_post ON relays (post_id);
 CREATE TABLE IF NOT EXISTS relayed (
 	source_id  TEXT PRIMARY KEY,
 	post_id    TEXT NOT NULL REFERENCES posts (id) ON DELETE CASCADE,
@@ -116,6 +117,7 @@ CREATE TABLE IF NOT EXISTS relayed (
 	author_id  TEXT NOT NULL,
 	author     TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS relayed_by_post ON relayed (post_id);
 CREATE TABLE IF NOT EXISTS reactions (
 	message_id TEXT NOT NULL,
 	emoji      TEXT NOT NULL,
@@ -125,6 +127,7 @@ CREATE TABLE IF NOT EXISTS reactions (
 	PRIMARY KEY (message_id, emoji, user_id)
 );
 CREATE INDEX IF NOT EXISTS reactions_by_source ON reactions (source_id, emoji);
+CREATE INDEX IF NOT EXISTS reactions_by_post ON reactions (post_id);
 CREATE TABLE IF NOT EXISTS webhooks (
 	channel_id TEXT PRIMARY KEY,
 	webhook_id TEXT NOT NULL,
@@ -185,7 +188,7 @@ var postColumns = []string{
 	"id", "leader_id", "leader_name", "guild_id", "guild_name", "dungeon_id", "mode_id", "min_gs", "looking_for",
 	"missing", "start", "note", "status", "created_at", "expires_at", "closed_at", "revision", "pinged", "start_at",
 	"leader_char", "filled_at", "reminded", "leader_class", "leader_role", "leader_gs", "rally", "size",
-	"faction", "server", "hidden", "invites", "archived",
+	"faction", "server", "hidden", "invites", "archived", "invited",
 }
 
 var (
@@ -263,6 +266,8 @@ var migrations = []string{
 	`ALTER TABLE relays ADD COLUMN quote TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE profiles ADD COLUMN by_dm INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE posts ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE posts ADD COLUMN invited TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE alerts ADD COLUMN dm_refused INTEGER NOT NULL DEFAULT 0`,
 }
 
 var addColumn = regexp.MustCompile(`^ALTER TABLE (\w+) ADD COLUMN (\w+) `)
@@ -853,10 +858,13 @@ type EndedPost struct {
 	Messages []MessageRef
 }
 
-// EndedBefore lists up to limit posts that ended before the cutoff.
-func (s *Store) EndedBefore(cutoff time.Time, limit int) []EndedPost {
-	ids, err := queryIDs(s.db, `SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND closed_at < ?
-		ORDER BY closed_at LIMIT ?`, millis(cutoff), limit)
+// EndedBefore lists up to limit posts that ended before the cutoff, those
+// that ended first first, leaving out the posts to skip.
+func (s *Store) EndedBefore(cutoff time.Time, limit int, skip ...string) []EndedPost {
+	not, args := notIn(skip)
+	args = append([]any{millis(cutoff)}, append(args, limit)...)
+	ids, err := queryIDs(s.db, `SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND closed_at < ?`+not+`
+		ORDER BY closed_at, id LIMIT ?`, args...)
 	if err != nil {
 		log.Printf("store: list ended posts: %v", err)
 		return nil
@@ -869,10 +877,24 @@ func (s *Store) EndedBefore(cutoff time.Time, limit int) []EndedPost {
 }
 
 // ArchiveDue lists up to limit ended posts whose threads aren't archived
-// yet, those that ended first first.
-func (s *Store) ArchiveDue(limit int) []Post {
-	return s.postsWhere(`SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND archived = 0
-		ORDER BY closed_at, id LIMIT ?`, limit)
+// yet, those that ended first first, leaving out the posts to skip.
+func (s *Store) ArchiveDue(limit int, skip ...string) []Post {
+	not, args := notIn(skip)
+	return s.postsWhere(`SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND archived = 0`+not+`
+		ORDER BY closed_at, id LIMIT ?`, append(args, limit)...)
+}
+
+// notIn is the condition that leaves the given posts out of a query, and
+// its arguments.
+func notIn(ids []string) (string, []any) {
+	if len(ids) == 0 {
+		return "", nil
+	}
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	return ` AND id NOT IN (?` + strings.Repeat(", ?", len(ids)-1) + `)`, args
 }
 
 // MarkArchived records that the threads under a post that ended at
@@ -1017,8 +1039,11 @@ func (s *Store) inTx(fn func(tx *sql.Tx) error) error {
 	if err != nil {
 		return err
 	}
+	// Also when fn panics: a transaction left open would keep the store's
+	// only connection, and every later call would wait for it for good.
+	// After the commit, this does nothing.
+	defer tx.Rollback()
 	if err := fn(tx); err != nil {
-		tx.Rollback()
 		return err
 	}
 	return tx.Commit()
@@ -1032,13 +1057,13 @@ type querier interface {
 
 func loadPost(q querier, id string) (*Post, error) {
 	var p Post
-	var lookingFor, pinged, hidden, invites string
+	var lookingFor, pinged, hidden, invites, invited string
 	var created, expires, closed, startAt, filled int64
 	err := q.QueryRow(selectPost+" WHERE id = ?", id).Scan(
 		&p.ID, &p.LeaderID, &p.LeaderName, &p.GuildID, &p.GuildName, &p.DungeonID, &p.ModeID, &p.MinGS, &lookingFor,
 		&p.Missing, &p.Start, &p.Note, &p.Status, &created, &expires, &closed, &p.Revision, &pinged, &startAt,
 		&p.LeaderChar, &filled, &p.Reminded, &p.LeaderClass, &p.LeaderRole, &p.LeaderGS, &p.Rally, &p.Size,
-		&p.Faction, &p.Server, &hidden, &invites, &p.Archived)
+		&p.Faction, &p.Server, &hidden, &invites, &p.Archived, &invited)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -1056,6 +1081,9 @@ func loadPost(q querier, id string) (*Post, error) {
 	}
 	if err := json.Unmarshal([]byte(invites), &p.Invites); err != nil {
 		return nil, fmt.Errorf("post %s invites: %w", id, err)
+	}
+	if err := json.Unmarshal([]byte(invited), &p.Invited); err != nil {
+		return nil, fmt.Errorf("post %s invited: %w", id, err)
 	}
 	p.CreatedAt, p.ExpiresAt, p.ClosedAt = fromMillis(created), fromMillis(expires), fromMillis(closed)
 	p.StartAt, p.FilledAt = fromMillis(startAt), fromMillis(filled)
@@ -1121,11 +1149,15 @@ func writePost(tx *sql.Tx, p *Post) error {
 	if err != nil {
 		return err
 	}
+	invited, err := json.Marshal(append([]string{}, p.Invited...))
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(upsertPost,
 		p.ID, p.LeaderID, p.LeaderName, p.GuildID, p.GuildName, p.DungeonID, p.ModeID, p.MinGS, string(lookingFor),
 		p.Missing, p.Start, p.Note, p.Status, millis(p.CreatedAt), millis(p.ExpiresAt), millis(p.ClosedAt), p.Revision,
 		string(pinged), millis(p.StartAt), p.LeaderChar, millis(p.FilledAt), p.Reminded, p.LeaderClass, p.LeaderRole,
-		p.LeaderGS, p.Rally, p.Size, p.Faction, p.Server, string(hidden), string(invites), p.Archived)
+		p.LeaderGS, p.Rally, p.Size, p.Faction, p.Server, string(hidden), string(invites), p.Archived, string(invited))
 	if err != nil {
 		return err
 	}

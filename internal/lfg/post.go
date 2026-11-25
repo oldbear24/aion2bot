@@ -194,6 +194,10 @@ type Post struct {
 	Hidden []string `json:"hidden,omitempty"`
 	// Invites are the players the leader invited who haven't joined yet.
 	Invites []Invite `json:"invites,omitempty"`
+	// Invited lists everyone who was sent an invitation to this post, also
+	// those whose invitation was withdrawn or used: they aren't sent
+	// another one.
+	Invited []string `json:"invited,omitempty"`
 }
 
 func (p *Post) Active() bool { return p.Status == StatusOpen || p.Status == StatusFull }
@@ -208,6 +212,7 @@ func (p *Post) Clone() Post {
 	c.Pinged = slices.Clone(p.Pinged)
 	c.Hidden = slices.Clone(p.Hidden)
 	c.Invites = slices.Clone(p.Invites)
+	c.Invited = slices.Clone(p.Invited)
 	return c
 }
 
@@ -383,6 +388,17 @@ func (p *Post) Invite(inv Invite) error {
 	}
 	p.Invites = append(p.Invites, inv)
 	return nil
+}
+
+// MarkInvited records that a user was sent an invitation to this post and
+// reports whether this is the first time. A leader who withdraws an
+// invitation and invites the player again doesn't message them twice.
+func (p *Post) MarkInvited(userID string) bool {
+	if slices.Contains(p.Invited, userID) {
+		return false
+	}
+	p.Invited = append(p.Invited, userID)
+	return true
 }
 
 // InviteOf is a player's invitation to the post, if they have one.
@@ -655,7 +671,7 @@ const (
 // yet; it works for ended posts too.
 func (p *Post) Copy(who CopyWho, startAt time.Time, note string, ttl time.Duration, now time.Time, leave func(Player) bool) Post {
 	c := p.Clone()
-	c.ID, c.Messages, c.Pinged, c.Hidden, c.Invites = "", nil, nil, nil, nil
+	c.ID, c.Messages, c.Pinged, c.Hidden, c.Invites, c.Invited = "", nil, nil, nil, nil, nil
 	c.Status, c.CreatedAt, c.ClosedAt, c.FilledAt, c.Revision = StatusOpen, now, time.Time{}, time.Time{}, 0
 	c.Reminded, c.Archived = false, false
 	c.StartAt, c.Start, c.Note = startAt, "", note

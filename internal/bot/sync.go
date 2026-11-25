@@ -42,7 +42,7 @@ func (b *Bot) runSync(postID string, st *syncState) {
 	defer b.syncWG.Done()
 	for {
 		time.Sleep(syncDelay)
-		b.syncPost(postID)
+		step("updating the cards of post "+postID, func() { b.syncPost(postID) })
 
 		b.syncMu.Lock()
 		if !st.dirty {
@@ -144,6 +144,9 @@ func (b *Bot) deliver(p lfg.Post, g lfg.GuildConfig, ping bool) (lfg.MessageRef,
 	return lfg.MessageRef{GuildID: g.GuildID, ChannelID: g.ChannelID, MessageID: id, PingRoleID: role}, nil
 }
 
+// forEach runs fn on every item, a few at a time. A panic in fn is logged
+// and counts as that item done: on these goroutines nothing else would
+// catch it, and it would take the whole bot down.
 func forEach[T any](items []T, fn func(T)) {
 	sem := make(chan struct{}, fanOut)
 	var wg sync.WaitGroup
@@ -152,6 +155,7 @@ func forEach[T any](items []T, fn func(T)) {
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem; wg.Done() }()
+			defer guard("in one of several requests")
 			fn(it)
 		}()
 	}
@@ -176,23 +180,65 @@ func (b *Bot) guildLangs() langMap {
 	return langs
 }
 
+// cleanupRetry is how long an ended post whose messages couldn't all be
+// deleted, or whose threads couldn't all be archived, waits for the next
+// try. Until then the cleanup goes on to the posts after it, so the ones
+// that keep failing never hold up the rest.
+const cleanupRetry = 10 * time.Minute
+
+// backoff remembers the posts something failed for, and until when to leave
+// them alone. The zero value is empty and ready to use.
+type backoff struct {
+	mu    sync.Mutex
+	until map[string]time.Time
+}
+
+// failed makes a post wait before it is tried again.
+func (c *backoff) failed(postID string, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.until == nil {
+		c.until = map[string]time.Time{}
+	}
+	c.until[postID] = now.Add(cleanupRetry)
+}
+
+// waiting lists the posts still to be left alone and forgets the others.
+func (c *backoff) waiting(now time.Time) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var ids []string
+	for id, until := range c.until {
+		if now.Before(until) {
+			ids = append(ids, id)
+		} else {
+			delete(c.until, id)
+		}
+	}
+	return ids
+}
+
 // deleteEnded removes posts that ended before the cutoff: every copy of the
 // card and the thread under it, then the stored post. A post whose
-// messages couldn't all be deleted is retried on the next round.
-func (b *Bot) deleteEnded(cutoff time.Time) {
-	for _, e := range b.store.EndedBefore(cutoff, deleteBatch) {
+// messages couldn't all be deleted is tried again after cleanupRetry.
+func (b *Bot) deleteEnded(now, cutoff time.Time) {
+	for _, e := range b.store.EndedBefore(cutoff, deleteBatch, b.deleteLater.waiting(now)...) {
 		if b.deleteMessages(e.ID, e.Messages) == 0 {
 			b.store.DeletePost(e.ID)
+		} else {
+			b.deleteLater.failed(e.ID, now)
 		}
 	}
 }
 
 // archiveEnded archives the threads under ended posts that aren't archived
 // yet: those that just expired, and those whose threads couldn't all be
-// archived before, which are tried again every round.
-func (b *Bot) archiveEnded() {
-	for _, p := range b.store.ArchiveDue(deleteBatch) {
-		b.archiveThreads(p)
+// archived before, which are tried again after cleanupRetry.
+func (b *Bot) archiveEnded(now time.Time) {
+	for _, p := range b.store.ArchiveDue(deleteBatch, b.archiveLater.waiting(now)...) {
+		if !b.archiveThreads(p) {
+			b.archiveLater.failed(p.ID, now)
+		}
 	}
 }
 
@@ -200,17 +246,20 @@ func (b *Bot) archiveEnded() {
 // so they drop out of the channels' thread lists. A message in one brings it
 // back, as Discord unarchives a thread on any new message unless a moderator
 // locked it, and so does reopening the post, whose note goes to the threads.
-// The post counts as archived once none of its threads is left to try again.
-func (b *Bot) archiveThreads(p lfg.Post) {
+// The post counts as archived once none of its threads is left to try again,
+// which is what it reports.
+func (b *Bot) archiveThreads(p lfg.Post) bool {
 	var threadIDs []string
 	for _, ref := range p.Messages {
 		if ref.Thread {
 			threadIDs = append(threadIDs, ref.MessageID)
 		}
 	}
-	if b.setArchived(p.ID, threadIDs, true) == 0 {
-		b.store.MarkArchived(p.ID, p.ClosedAt)
+	if b.setArchived(p.ID, threadIDs, true) > 0 {
+		return false
 	}
+	b.store.MarkArchived(p.ID, p.ClosedAt)
+	return true
 }
 
 // removePost deletes a post right away, when its leader asks for it. It is

@@ -259,8 +259,8 @@ func (b *Bot) onDraftDetails(i *discordgo.Interaction, abyss bool) error {
 	switch {
 	case err != nil:
 		d.Problem = "draft.bad_start"
-	case !at.IsZero() && !at.After(now):
-		d.Problem = "draft.start_past"
+	case startProblem(at, now) != "":
+		d.Problem = startProblem(at, now)
 	default:
 		d.StartAt = at
 	}

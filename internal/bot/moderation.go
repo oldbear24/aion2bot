@@ -5,6 +5,7 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -171,6 +172,14 @@ func (b *Bot) hidePost(postID, guildID string) (failed int) {
 		}
 		return nil
 	})
+	return b.takeOff(postID, guildID)
+}
+
+// takeOff deletes a server's copy of a post and the thread under it, and
+// forgets them, so the post is no longer updated there and its thread no
+// longer hears the others. It returns how many of the bot's messages
+// couldn't be deleted; those stay recorded.
+func (b *Bot) takeOff(postID, guildID string) (failed int) {
 	var here []lfg.MessageRef
 	for _, m := range b.store.AllMessages(postID) {
 		if m.GuildID == guildID {
@@ -181,6 +190,66 @@ func (b *Bot) hidePost(postID, guildID string) (failed int) {
 		b.store.RemoveMessagesIn(postID, guildID)
 	}
 	return failed
+}
+
+// takeDown takes the posts still shown off the servers that gone picks
+// for them, and returns the posts it took a copy of.
+func (b *Bot) takeDown(gone func(p lfg.Post, guildID string) bool) []string {
+	var postIDs []string
+	for _, p := range b.store.ShownPosts() {
+		touched := false
+		for _, guildID := range p.GuildIDs() {
+			if gone(p, guildID) {
+				b.takeOff(p.ID, guildID)
+				touched = true
+			}
+		}
+		if touched {
+			postIDs = append(postIDs, p.ID)
+		}
+	}
+	return postIDs
+}
+
+// unlinked picks the copies of posts on servers that the post's own server
+// doesn't share posts with: it left their network, or they left its.
+func (b *Bot) unlinked() func(p lfg.Post, guildID string) bool {
+	linked := map[string][]string{}
+	return func(p lfg.Post, guildID string) bool {
+		if guildID == p.GuildID {
+			return false
+		}
+		with, ok := linked[p.GuildID]
+		if !ok {
+			with = b.store.Linked(p.GuildID)
+			linked[p.GuildID] = with
+		}
+		return !slices.Contains(with, guildID)
+	}
+}
+
+// closeBare closes those of the given posts that are open with no card
+// left anywhere, where nobody could find them any more, like a new post
+// that reached no server. byGuild is the server whose moderators took the
+// last card down; the leader hears it from them.
+func (b *Bot) closeBare(postIDs []string, byGuild string) {
+	for _, id := range postIDs {
+		p, err := b.store.UpdatePost(id, func(p *lfg.Post) error {
+			if !p.Active() || len(p.Messages) > 0 {
+				return errUnchanged
+			}
+			return p.Close(lfg.StatusClosed, time.Now())
+		})
+		if err == nil && byGuild != "" {
+			b.tellLeader(p, byGuild, "dm.mod_closed")
+		}
+	}
+}
+
+// separate takes the posts down that servers no longer share, after one of
+// them left a network or was removed from it by byGuild.
+func (b *Bot) separate(byGuild string) {
+	b.closeBare(b.takeDown(b.unlinked()), byGuild)
 }
 
 // onBlock blocks the players picked on a post's moderation panel: on the
@@ -251,9 +320,10 @@ func personOn(p lfg.Post, userID string) (lfg.Player, bool) {
 // keepAway applies a new block to the runs already up and returns how many
 // of the player's own runs it took down. Blocked on one server, their runs
 // are taken off it. Blocked in a network, their runs there are deleted, and
-// they are taken off the runs they joined there.
+// they are taken off the runs they joined there. Their runs that ended but
+// are still shown go the same way: the leader could reopen those.
 func (b *Bot) keepAway(userID, guildID string, network []string, whole bool) (removed int) {
-	for _, q := range b.store.ActivePosts() {
+	for _, q := range b.store.ShownPosts() {
 		switch {
 		case !whole && q.LeaderID == userID && q.InGuild(guildID):
 			b.hidePost(q.ID, guildID)
@@ -261,7 +331,7 @@ func (b *Bot) keepAway(userID, guildID string, network []string, whole bool) (re
 		case whole && slices.Contains(network, q.GuildID) && q.LeaderID == userID:
 			b.removePost(q.ID)
 			removed++
-		case whole && slices.Contains(network, q.GuildID) && q.Has(userID):
+		case whole && slices.Contains(network, q.GuildID) && q.Active() && q.Has(userID):
 			if p, _, promoted, err := b.dropPlayer(q.ID, userID); err == nil {
 				b.welcome(p, promoted, true)
 			}

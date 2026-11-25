@@ -362,6 +362,23 @@ func TestInviteFlow(t *testing.T) {
 		t.Errorf("not withdrawn: %+v", p.Invites)
 	}
 
+	// Invited again, the player has the invitation back, without a second
+	// message: withdrawing and inviting is no way to keep messaging someone.
+	dmsBefore, notesBefore := len(sentTo(f, "dm")), len(sentTo(f, "m1"))
+	b.onInteraction(nil, interaction(t, discordgo.InteractionMessageComponent, "L", fmt.Sprintf(`{"custom_id":%q,"component_type":5,
+		"values":["W"],"resolved":{"users":{"W":{"id":"W","username":"wes"}}}}`, customID(actInvite, p.ID))))
+	if p, _ = b.store.Post(p.ID); !p.IsInvited("W") {
+		t.Fatalf("not invited again: %+v", p.Invites)
+	}
+	if answer := lastAnswer(f); !strings.Contains(answer, "wes") {
+		t.Errorf("the panel doesn't say whom it invited again:\n%s", answer)
+	}
+	if dms, notes := len(sentTo(f, "dm")), len(sentTo(f, "m1")); dms != dmsBefore || notes != notesBefore {
+		t.Errorf("inviting again sent %d DMs and %d notes", dms-dmsBefore, notes-notesBefore)
+	}
+	b.onInteraction(nil, interaction(t, discordgo.InteractionMessageComponent, "L", fmt.Sprintf(`{"custom_id":%q,"component_type":3,
+		"values":["W"]}`, customID(actUninvite, p.ID))))
+
 	// Only the leader invites.
 	b.onInteraction(nil, interaction(t, discordgo.InteractionMessageComponent, "T", fmt.Sprintf(`{"custom_id":%q,"component_type":5,
 		"values":["X"],"resolved":{"users":{"X":{"id":"X","username":"x"}}}}`, customID(actInvite, p.ID))))
