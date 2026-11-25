@@ -41,6 +41,11 @@ type Bot struct {
 	// syncWG counts the syncs and reminders under way, which Stop waits for.
 	syncWG sync.WaitGroup
 
+	// renames holds the posts whose threads are being renamed (see
+	// scheduleRename).
+	renameMu sync.Mutex
+	renames  map[string]*syncState
+
 	draftMu sync.Mutex
 	drafts  map[string]*draft
 

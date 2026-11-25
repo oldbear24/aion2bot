@@ -212,7 +212,7 @@ func (b *Bot) onHandOver(i *discordgo.Interaction, before lfg.Post, userID strin
 	b.scheduleSync(p.ID)
 	err = b.update(i, notice(colorOpen, l.T("hand.done", b.game.LeaderEmoji, escape(p.LeaderName), b.runName(p))))
 
-	go b.renameThreads(p)
+	b.scheduleRename(p.ID)
 	b.learnMembers(p, p.GuildIDs())
 	byGuild := ""
 	if !byLeader {
@@ -629,7 +629,7 @@ func (b *Bot) onMove(i *discordgo.Interaction, before lfg.Post, dungeonID, modeI
 	if p.ID == "" || p.DungeonID == before.DungeonID && p.ModeID == before.ModeID {
 		return err
 	}
-	go b.renameThreads(p)
+	b.scheduleRename(p.ID)
 	b.learnMembers(p, p.GuildIDs())
 	b.announce(p, nil, false, func(guildID string, l i18n.Lang) discordgo.MessageComponent {
 		return b.moveNote(before, p, guildID, l)
