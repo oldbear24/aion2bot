@@ -10,6 +10,10 @@
         { "id": "hard", "name": "Hard", "gs": 3000 },
         { "id": "easy", "name": "Easy", "gs": 2800 }
       ] },
+    { "id": "corroded-decontamination-facility", "name": "Corroded Decontamination Facility", "emoji": "☣️", "party_size": 10, "description": "Event Sanctuary",
+      "modes": [
+        { "id": "event", "name": "Event", "gs": 2100 }
+      ] },
 
     { "id": "dredgion-depot", "name": "Dredgion Depot", "emoji": "⚓", "party_size": 4, "description": "Subjugation",
       "modes": [

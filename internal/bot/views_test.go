@@ -772,6 +772,7 @@ func TestDungeonPartySizeLimitsMissing(t *testing.T) {
 		{"dredgion-depot", "hard", 3},
 		{"abyssal-forge-ludra", "conquest", 9},
 		{"abyssal-forge-ludra", "easy", 9},
+		{"corroded-decontamination-facility", "event", 9},
 	} {
 		d, ok := b.game.Dungeon(c.dungeon)
 		if !ok {

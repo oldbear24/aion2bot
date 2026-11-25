@@ -257,8 +257,9 @@ The list covers what is live on the **global** version as of 31 October 2026:
 - **Transcendence (5 players):** Deus Research Base, Shattered Arkanis. Stages 1–4.
 - **Subjugation (4 players):** Dredgion Depot. Easy / Normal / Hard.
 - **Sanctuary raid (10 players):** Abyssal Forge: Ludra. Normal (GS 2,800) / Hard (GS 3,000), both open from 4 November, and Easy (GS 2,800).
+- **Event Sanctuary (10 players):** Corroded Decontamination Facility, final boss Bargott. One Event mode (GS 2,100) with normalized stats, from 25 November to the maintenance on 16 December.
 
-Content only in the client files (Chalice of Muspel, Corroded Decontamination Facility, other hard modes) is left out; add it when it opens on global.
+Content only in the client files (Chalice of Muspel, other hard modes) is left out; add it when it opens on global.
 
 The Abyss events are Artifact Siege and Abyss Farm, each in Lower or Middle Reshanta, the Abyss Boss, Dimensional Invasion (enemies invading your territory)
 and Rift Invasion (going through a rift into the enemy's). Rename them or add others to match the global client.
