@@ -88,6 +88,8 @@ func New(token string, game *config.Game, store *lfg.Store, devGuild string) (*B
 		stop:       make(chan struct{}),
 		done:       make(chan struct{}),
 	}
+	s.AddHandler(onConnect)
+	s.AddHandler(onDisconnect)
 	s.AddHandler(b.onInteraction)
 	s.AddHandler(b.onGuildDelete)
 	s.AddHandler(b.onMessageCreate)
@@ -137,6 +139,7 @@ func (b *Bot) Start() error {
 		b.scheduleSync(p.ID)
 	}
 	go b.maintenance()
+	go b.watchGateway()
 	return nil
 }
 

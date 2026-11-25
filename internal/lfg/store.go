@@ -1017,8 +1017,11 @@ func (s *Store) inTx(fn func(tx *sql.Tx) error) error {
 	if err != nil {
 		return err
 	}
+	// Also when fn panics: a transaction left open would keep the store's
+	// only connection, and every later call would wait for it for good.
+	// After the commit, this does nothing.
+	defer tx.Rollback()
 	if err := fn(tx); err != nil {
-		tx.Rollback()
 		return err
 	}
 	return tx.Commit()

@@ -866,3 +866,34 @@ func TestBlocks(t *testing.T) {
 		t.Fatal("a network block outlived the server's membership")
 	}
 }
+
+// A change that panics is caught by the handler that asked for it; the
+// store has one connection, which the open transaction must give back.
+func TestPanicInAChangeLeavesTheStoreUsable(t *testing.T) {
+	s, _ := openTestStore(t)
+	p, err := s.CreatePost(newPost(1), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() { recover() }()
+		s.UpdatePost(p.ID, func(p *Post) error {
+			p.Note = "half done"
+			panic("boom")
+		})
+	}()
+
+	read := make(chan Post, 1)
+	go func() {
+		got, _ := s.Post(p.ID)
+		read <- got
+	}()
+	select {
+	case got := <-read:
+		if got.ID != p.ID || got.Note != p.Note {
+			t.Errorf("post after the panic: %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the store is stuck behind the transaction that panicked")
+	}
+}
