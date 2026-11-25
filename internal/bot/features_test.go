@@ -625,3 +625,42 @@ func TestProfileFollowsToRuns(t *testing.T) {
 		t.Errorf("the alt's run shows %s %d", char, gs)
 	}
 }
+
+// Discord refuses the DM of a player who left, closed their DMs or blocked
+// the bot. After a few in a row the bot turns their alert off; nobody else
+// would, and it would go on trying for every post that matches.
+func TestAnAlertNobodyGetsIsTurnedOff(t *testing.T) {
+	refused := &discordgo.RESTError{Message: &discordgo.APIErrorMessage{Code: discordgo.ErrCodeCannotSendMessagesToThisUser}}
+	b := goneBot(t, &fakeDiscord{})
+	alert := lfg.Alert{UserID: "A", GuildID: "g1", Lang: "en", Dungeons: []string{"krao-cave"}, Choices: []string{"cleric|healer"}}
+	if err := b.store.SetAlert(alert); err != nil {
+		t.Fatal(err)
+	}
+	on := func() bool { _, ok := b.store.Alert("A"); return ok }
+
+	// A DM that got through in between starts the count again, and one that
+	// failed for another reason doesn't count.
+	b.alertSent("A", refused)
+	b.alertSent("A", refused)
+	b.alertSent("A", nil)
+	b.alertSent("A", refused)
+	b.alertSent("A", refused)
+	b.alertSent("A", fmt.Errorf("Discord is down"))
+	if !on() {
+		t.Fatal("the alert was turned off before three DMs in a row were refused")
+	}
+	b.alertSent("A", refused)
+	if on() {
+		t.Error("the alert is still on after three refused DMs in a row")
+	}
+
+	// Setting the alert up again starts the count again too.
+	b.store.SetAlert(alert)
+	b.alertSent("A", refused)
+	b.alertSent("A", refused)
+	b.store.SetAlert(alert)
+	b.alertSent("A", refused)
+	if !on() {
+		t.Error("an alert set up again was turned off for DMs refused before")
+	}
+}

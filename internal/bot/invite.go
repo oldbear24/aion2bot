@@ -65,7 +65,8 @@ func (b *Bot) inviteControls(p lfg.Post, l i18n.Lang) []discordgo.MessageCompone
 // onInvite invites the players the leader picked: the picker offers the
 // members of the server it is on. Bots, players blocked there or on the
 // post's server, and those already on the post or invited aren't. The panel
-// says who was, and they hear about it.
+// says who was, and they hear about it, once: a player invited again after
+// the leader withdrew their invitation has it back, without another message.
 func (b *Bot) onInvite(i *discordgo.Interaction, before lfg.Post, userIDs []string) error {
 	l := lang(i)
 	if !before.Active() {
@@ -94,14 +95,17 @@ func (b *Bot) onInvite(i *discordgo.Interaction, before lfg.Post, userIDs []stri
 		}
 	}
 
-	var sent []lfg.Invite
+	var sent, fresh []lfg.Invite
 	refused := map[string][]string{}
 	p, err := b.store.UpdatePost(before.ID, func(p *lfg.Post) error {
-		sent, refused = nil, map[string][]string{}
+		sent, fresh, refused = nil, nil, map[string][]string{}
 		for _, inv := range asked {
 			switch err := p.Invite(inv); {
 			case err == nil:
 				sent = append(sent, inv)
+				if p.MarkInvited(inv.UserID) {
+					fresh = append(fresh, inv)
+				}
 			case errors.Is(err, lfg.ErrNotOpen):
 				return err
 			case errors.Is(err, lfg.ErrInvitedAlready):
@@ -129,8 +133,8 @@ func (b *Bot) onInvite(i *discordgo.Interaction, before lfg.Post, userIDs []stri
 	}
 
 	err = b.update(i, b.managePanelSaying(p, inviteSummary(sent, skipped, l), l))
-	if len(sent) > 0 {
-		b.sendInvites(p, sent)
+	if len(fresh) > 0 {
+		b.sendInvites(p, fresh)
 	}
 	return err
 }
