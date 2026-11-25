@@ -511,6 +511,7 @@ var cs = map[string]string{
 	"dm.mod_handed":        "🛠️ Moderátoři serveru *%[2]s* předali tvůj nábor %[1]s někomu z party.",
 	"blocked.post":         "Z tohoto serveru nemůžeš zakládat nábory: moderátoři tě zablokovali.",
 	"blocked.join":         "Do tohoto náboru se přidat nemůžeš: jsi zablokovaný na tomto serveru, nebo na serveru, kde nábor vznikl.",
+	"blocked.reopen":       "Tenhle nábor znovu otevřít nemůžeš: na serveru, kde vznikl, jsi zablokovaný.",
 
 	// /lfg-blocks.
 	"cmd.blocks":        "Ukáže hráče zablokované na tomto serveru a zruší blokování (moderátoři)",

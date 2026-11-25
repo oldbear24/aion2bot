@@ -591,6 +591,11 @@ func (b *Bot) announceChanges(before, after lfg.Post) {
 // pinging anyone.
 func (b *Bot) onReopen(i *discordgo.Interaction, p lfg.Post) error {
 	l := lang(i)
+	// A leader blocked on the post's server, or in its network, can't post
+	// from there, and an ended post is no way around that.
+	if b.store.Blocked(p.LeaderID, p.GuildID) {
+		return b.reply(i, notice(colorClosed, l.T("blocked.reopen")))
+	}
 	p, err := b.store.ReopenPost(p.ID, b.game.MaxRunsPerLeader, b.game.PostTTL(), time.Now())
 	switch {
 	case errors.Is(err, lfg.ErrTooManyPosts):

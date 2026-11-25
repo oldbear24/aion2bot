@@ -177,3 +177,42 @@ func TestBlocksKeepPostsAway(t *testing.T) {
 		checkSelects(t, panel)
 	}
 }
+
+// A block also covers the runs of the player that ended but are still shown:
+// their leader could reopen them, and bring them back where they were blocked.
+func TestABlockCoversThePlayersEndedPosts(t *testing.T) {
+	f := &fakeDiscord{}
+	b := goneBot(t, f)
+	p, _ := sharedPosts(t, b)
+	closePost := func() {
+		t.Helper()
+		if _, err := b.store.UpdatePost(p.ID, func(p *lfg.Post) error { return p.Close(lfg.StatusClosed, time.Now()) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Blocked on a server the post was shared with, it comes off that server
+	// and stays off once reopened.
+	closePost()
+	b.store.Block(lfg.Block{Scope: "g2", UserID: p.LeaderID, Name: p.LeaderName, By: "M"})
+	b.keepAway(p.LeaderID, "g2", []string{"g2"}, false)
+	if got := cardsOf(t, b, p.ID); !slices.Equal(got, []string{"m1"}) {
+		t.Fatalf("the ended post has the cards %v after a block on g2", got)
+	}
+	leaderClicks(t, b, p, actReopen)
+	if q, _ := b.store.Post(p.ID); !q.Active() || q.InGuild("g2") {
+		t.Fatalf("reopened: status %s, cards %v", q.Status, q.Messages)
+	}
+
+	// Blocked on the server it was posted on, it can't be reopened at all.
+	closePost()
+	b.store.Block(lfg.Block{Scope: "g1", UserID: p.LeaderID, Name: p.LeaderName, By: "M"})
+	f.reset()
+	leaderClicks(t, b, p, actReopen)
+	if q, _ := b.store.Post(p.ID); q.Active() {
+		t.Error("a leader blocked on the post's server reopened it")
+	}
+	if got := answers(f); len(got) != 1 || !strings.Contains(got[0], "zablokovaný") {
+		t.Errorf("answers: %v", got)
+	}
+}

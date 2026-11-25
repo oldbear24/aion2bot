@@ -503,6 +503,7 @@ var en = map[string]string{
 	"dm.mod_handed":        "🛠️ The moderators of *%[2]s* handed your %[1]s post to a party member.",
 	"blocked.post":         "You can't post runs from this server: its moderators blocked you.",
 	"blocked.join":         "You can't join this run: you're blocked on this server, or on the server it was posted on.",
+	"blocked.reopen":       "You can't reopen this run: you're blocked on the server it was posted on.",
 
 	// /lfg-blocks.
 	"cmd.blocks":        "List the players blocked on this server and lift blocks (moderators)",

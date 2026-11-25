@@ -320,9 +320,10 @@ func personOn(p lfg.Post, userID string) (lfg.Player, bool) {
 // keepAway applies a new block to the runs already up and returns how many
 // of the player's own runs it took down. Blocked on one server, their runs
 // are taken off it. Blocked in a network, their runs there are deleted, and
-// they are taken off the runs they joined there.
+// they are taken off the runs they joined there. Their runs that ended but
+// are still shown go the same way: the leader could reopen those.
 func (b *Bot) keepAway(userID, guildID string, network []string, whole bool) (removed int) {
-	for _, q := range b.store.ActivePosts() {
+	for _, q := range b.store.ShownPosts() {
 		switch {
 		case !whole && q.LeaderID == userID && q.InGuild(guildID):
 			b.hidePost(q.ID, guildID)
@@ -330,7 +331,7 @@ func (b *Bot) keepAway(userID, guildID string, network []string, whole bool) (re
 		case whole && slices.Contains(network, q.GuildID) && q.LeaderID == userID:
 			b.removePost(q.ID)
 			removed++
-		case whole && slices.Contains(network, q.GuildID) && q.Has(userID):
+		case whole && slices.Contains(network, q.GuildID) && q.Active() && q.Has(userID):
 			if p, _, promoted, err := b.dropPlayer(q.ID, userID); err == nil {
 				b.welcome(p, promoted, true)
 			}
