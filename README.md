@@ -201,15 +201,15 @@ and creates a GitHub release. CI tests every push and pull request. Details are 
 | `/help` | everyone | Shows how to use the bot, only to you (members with Manage Server also see the admin commands) |
 | `/legend` | everyone | Explains the icons on posts: roles, every class and the roles it fills, the leader's crown and the party lists, only to you |
 | `/help-public` | Manage Messages | Posts the player guide (without the admin commands) in the channel for everyone (permission adjustable in Server Settings → Integrations) |
-| `/lfg-setup channel [ping_role] [language]` | Manage Server | Sets this server's LFG channel, ping role and post language, with a permission checklist |
+| `/lfg-setup channel [ping_role] [language]` | Manage Server | Sets this server's LFG channel, ping role and post language, with a permission checklist. A new channel gets the open posts, and those in the old one are taken down |
 | `/lfg-check [channel]` | Manage Server | Checks the bot's permissions, the ping role and the network |
 | `/lfg-network create name` | Manage Server | Starts a network and shows its join code |
 | `/lfg-network join code` | Manage Server | Links this server to a network |
 | `/lfg-network info` | Manage Server | Shows the network, its code and its servers |
-| `/lfg-network leave` | Manage Server | Stops sharing posts with the network |
-| `/lfg-network remove server` | Network owner | Removes a server from the network |
+| `/lfg-network leave` | Manage Server | Stops sharing posts with the network, and takes the posts shared so far down on both sides |
+| `/lfg-network remove server` | Network owner | Removes a server from the network, and takes the posts shared with it down on both sides |
 | `/lfg-network new-code` | Network owner | Replaces the join code |
-| `/lfg-disable` | Manage Server | Stops new posts from arriving on this server |
+| `/lfg-disable` | Manage Server | Stops new posts from arriving on this server, and takes those in its channel down |
 | `/lfg-blocks` | Manage Messages | Lists the players blocked on this server (and in the network, on its owner server) and lifts blocks. Players are blocked from **Manage** on one of their posts |
 
 ## Game data (`game.json`)

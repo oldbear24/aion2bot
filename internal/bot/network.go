@@ -92,14 +92,18 @@ func (b *Bot) cmdNetwork(i *discordgo.Interaction) error {
 		if err != nil {
 			return b.networkFailed(i, err)
 		}
-		return b.reply(i, notice(colorClosed, l.T("net.left", escape(n.Name))))
+		err = b.reply(i, notice(colorClosed, l.T("net.left", escape(n.Name))))
+		b.separate(i.GuildID)
+		return err
 
 	case "remove":
 		n, err := b.store.RemoveFromNetwork(i.GuildID, opts["server"])
 		if err != nil {
 			return b.networkFailed(i, err)
 		}
-		return b.reply(i, b.networkPanel(n, i.GuildID, l.T("net.removed"), l))
+		err = b.reply(i, b.networkPanel(n, i.GuildID, l.T("net.removed"), l))
+		b.separate(i.GuildID)
+		return err
 
 	case "new-code":
 		n, err := b.store.NewNetworkCode(i.GuildID)

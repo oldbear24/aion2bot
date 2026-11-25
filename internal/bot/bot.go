@@ -296,6 +296,11 @@ func (b *Bot) onGuildDelete(_ *discordgo.Session, g *discordgo.GuildDelete) {
 	if n, err := b.store.LeaveNetwork(g.ID); err == nil {
 		log.Printf("removed from guild %s, took it out of network %q", g.ID, n.Name)
 	}
+	// The cards there are out of reach; forgetting them stops the bot
+	// updating them and relaying to their threads. The server's own posts
+	// come off the servers it was linked with.
+	gone := b.unlinked()
+	b.closeBare(b.takeDown(func(p lfg.Post, guildID string) bool { return guildID == g.ID || gone(p, guildID) }), "")
 }
 
 // The bot's housekeeping runs every minute in two loops, so that neither

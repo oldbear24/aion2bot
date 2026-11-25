@@ -746,6 +746,8 @@ func (b *Bot) cmdSetup(i *discordgo.Interaction) error {
 
 	cfg := lfg.GuildConfig{GuildID: i.GuildID, GuildName: b.guildName(i.GuildID), ChannelID: channelID, PingRoleID: roleID,
 		Lang: string(b.setupLang(i, langCode))}
+	prev, again := b.store.Guild(i.GuildID)
+	moved := again && prev.ChannelID != channelID
 	if err := b.store.SetGuild(cfg); err != nil {
 		b.reply(i, notice(colorClosed, errorText(err, l)))
 		return err
@@ -755,15 +757,30 @@ func (b *Bot) cmdSetup(i *discordgo.Interaction) error {
 	if _, linked := b.store.NetworkOf(i.GuildID); !linked {
 		msg += l.T("setup.not_linked")
 	}
-	active := b.visiblePosts(i.GuildID)
-	if len(active) > 0 {
-		msg += l.T("setup.sending", l.N(len(active), "n.post"))
+	// The posts to send: those the channel doesn't have yet, which is all of
+	// them when the server changes its channel.
+	sending := 0
+	for _, p := range b.visiblePosts(i.GuildID) {
+		if moved || !p.InGuild(i.GuildID) {
+			sending++
+		}
+	}
+	if sending > 0 {
+		msg += l.T("setup.sending", l.N(sending, "n.post"))
 	}
 	err = b.reply(i, notice(colorOpen, msg))
 
-	for _, p := range active {
+	// A post can't move with its thread, so the copies in the channel the
+	// server had before are taken down, the ended ones too.
+	var taken []string
+	if moved {
+		taken = b.takeDown(func(_ lfg.Post, guildID string) bool { return guildID == i.GuildID })
+	}
+	for _, p := range b.visiblePosts(i.GuildID) {
 		b.broadcast(p, []lfg.GuildConfig{cfg}, false)
 	}
+	// A post that didn't make it to the new channel, and is nowhere else.
+	b.closeBare(taken, i.GuildID)
 	return err
 }
 
@@ -797,12 +814,17 @@ func (b *Bot) visiblePosts(guildID string) []lfg.Post {
 	return out
 }
 
+// /lfg-disable turns the posts off for this server and takes those in its
+// channel down. Its own posts stay up on the servers it is linked with.
 func (b *Bot) cmdDisable(i *discordgo.Interaction) error {
 	l := lang(i)
 	if !b.store.RemoveGuild(i.GuildID) {
 		return b.reply(i, notice(colorClosed, l.T("disable.none")))
 	}
-	return b.reply(i, notice(colorClosed, l.T("disable.done")))
+	err := b.reply(i, notice(colorClosed, l.T("disable.done")))
+	here := func(_ lfg.Post, guildID string) bool { return guildID == i.GuildID }
+	b.closeBare(b.takeDown(here), i.GuildID)
+	return err
 }
 
 func manageRow(postID string, l i18n.Lang) discordgo.ActionsRow {
