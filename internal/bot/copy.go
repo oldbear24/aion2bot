@@ -103,8 +103,8 @@ func (b *Bot) onCopySubmit(i *discordgo.Interaction, postID string) error {
 	switch {
 	case err != nil || at.IsZero():
 		return b.reply(i, notice(colorClosed, l.T("copy.bad_start")))
-	case !at.After(now):
-		return b.reply(i, notice(colorClosed, l.T("draft.start_past")))
+	case startProblem(at, now) != "":
+		return b.reply(i, notice(colorClosed, l.T(startProblem(at, now))))
 	}
 	who := lfg.CopyEveryone
 	switch first(values["who"]) {

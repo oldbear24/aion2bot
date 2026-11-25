@@ -414,6 +414,7 @@ var cs = map[string]string{
 	"draft.bad_start":    "Začátek napiš jako 21.09.2026 10:15, nebo jen 10:15. Když necháš prázdné, začíná se, jakmile bude parta plná.",
 	// Start time and time zones.
 	"draft.start_past":       "Tenhle začátek už uplynul. Zadej pozdější.",
+	"draft.start_far":        "Tenhle začátek je víc než dva měsíce daleko. Zkontroluj datum, nebo zadej dřívější.",
 	"profile.tz_ph":          "Tvoje časové pásmo",
 	"tz.UTC":                 "UTC",
 	"tz.Europe/London":       "Velká Británie, Irsko, Portugalsko (Londýn)",

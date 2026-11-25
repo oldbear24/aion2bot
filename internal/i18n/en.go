@@ -406,6 +406,7 @@ var en = map[string]string{
 	"draft.bad_start":    "Write the start like 21.09.2026 10:15, or just 10:15. Leave it empty to start as soon as the party is full.",
 	// Start time and time zones.
 	"draft.start_past":       "That start time has already passed. Pick a later one.",
+	"draft.start_far":        "That start is more than two months away. Check the date, or pick an earlier one.",
 	"profile.tz_ph":          "Your time zone",
 	"tz.UTC":                 "UTC",
 	"tz.Europe/London":       "UK, Ireland, Portugal (London)",

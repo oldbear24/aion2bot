@@ -548,8 +548,8 @@ func (b *Bot) onEditSubmit(i *discordgo.Interaction, postID string) error {
 		switch {
 		case err != nil:
 			return b.reply(i, notice(colorClosed, l.T("draft.bad_start")))
-		case !at.IsZero() && !at.After(now):
-			return b.reply(i, notice(colorClosed, l.T("draft.start_past")))
+		case startProblem(at, now) != "":
+			return b.reply(i, notice(colorClosed, l.T(startProblem(at, now))))
 		}
 		startAt = at
 	}
