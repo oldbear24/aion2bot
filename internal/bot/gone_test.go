@@ -211,7 +211,7 @@ func TestACardFollowsItsPostAfterALossOfAccess(t *testing.T) {
 		t.Errorf("the card no longer follows its post: %v", f.calls)
 	}
 
-	b.deleteEnded(time.Now().Add(time.Minute))
+	b.deleteEnded(time.Now(), time.Now().Add(time.Minute))
 	if !f.made("DELETE /channels/c1/messages/m1") {
 		t.Errorf("the post went without its card: %v", f.calls)
 	}
@@ -350,7 +350,7 @@ func TestACardLeftBehindByALastingLossOfAccess(t *testing.T) {
 	}
 	b.syncPost(p.ID)
 
-	b.deleteEnded(time.Now().Add(time.Minute))
+	b.deleteEnded(time.Now(), time.Now().Add(time.Minute))
 	if !f.made("DELETE /channels/c1/messages/m1") {
 		t.Errorf("the bot didn't try to delete the card: %v", f.calls)
 	}

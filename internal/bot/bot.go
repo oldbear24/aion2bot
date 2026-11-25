@@ -38,6 +38,7 @@ type Bot struct {
 
 	syncMu sync.Mutex
 	syncs  map[string]*syncState
+	// syncWG counts the syncs and reminders under way, which Stop waits for.
 	syncWG sync.WaitGroup
 
 	draftMu sync.Mutex
@@ -61,8 +62,13 @@ type Bot struct {
 	cmdMu      sync.RWMutex
 	commandIDs map[string]string
 
+	// deleteLater and archiveLater hold the ended posts whose cleanup failed
+	// until it is worth trying again.
+	deleteLater, archiveLater backoff
+
 	stop chan struct{}
-	done chan struct{}
+	// loops counts the maintenance loops, which end once stop is closed.
+	loops sync.WaitGroup
 }
 
 func New(token string, game *config.Game, store *lfg.Store, devGuild string) (*Bot, error) {
@@ -86,7 +92,6 @@ func New(token string, game *config.Game, store *lfg.Store, devGuild string) (*B
 
 		commandIDs: map[string]string{},
 		stop:       make(chan struct{}),
-		done:       make(chan struct{}),
 	}
 	s.AddHandler(onConnect)
 	s.AddHandler(onDisconnect)
@@ -138,14 +143,16 @@ func (b *Bot) Start() error {
 	for _, p := range b.store.ShownPosts() {
 		b.scheduleSync(p.ID)
 	}
-	go b.maintenance()
+	b.loops.Add(2)
+	go b.every(maintenanceEvery, b.keepTime)
+	go b.every(maintenanceEvery, b.cleanUp)
 	go b.watchGateway()
 	return nil
 }
 
 func (b *Bot) Stop() {
 	close(b.stop)
-	<-b.done
+	b.loops.Wait()
 	// Closing the gateway stops new interactions; REST calls from pending
 	// syncs still work, so let them finish.
 	b.s.Close()
@@ -274,6 +281,7 @@ func describe(i *discordgo.Interaction) string {
 // onGuildDelete forgets a server's settings once the bot is removed from it.
 // Outages also send this event, but with Unavailable set.
 func (b *Bot) onGuildDelete(_ *discordgo.Session, g *discordgo.GuildDelete) {
+	defer guard("leaving a guild")
 	if g.Unavailable {
 		return
 	}
@@ -285,34 +293,64 @@ func (b *Bot) onGuildDelete(_ *discordgo.Session, g *discordgo.GuildDelete) {
 	}
 }
 
-// maintenance expires old posts, reminds parties of their start, deletes
-// ended posts and archives the threads under the others, those it just
-// expired among them.
-func (b *Bot) maintenance() {
-	defer close(b.done)
-	tick := time.NewTicker(maintenanceEvery)
+// The bot's housekeeping runs every minute in two loops, so that neither
+// holds up the other. keepTime is what has to happen on time, and never
+// waits on Discord itself. cleanUp tidies up on Discord, where a rate limit
+// can make a single request wait for minutes.
+
+// every runs round now and then at every interval, until the bot stops.
+func (b *Bot) every(interval time.Duration, round func(now time.Time)) {
+	defer b.loops.Done()
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
-		now := time.Now()
-		for _, id := range b.store.ExpireDue(now) {
-			b.scheduleSync(id)
-		}
-		for _, id := range b.store.DueReminders(b.game.Reminder(), now) {
-			b.remind(id)
-		}
-		// Posts due for deletion go first: their threads needn't be archived.
-		b.deleteEnded(now.Add(-keepEndedPosts))
-		b.archiveEnded()
-		b.store.PruneRuns(now.Add(-keepRuns))
-		b.dropStaleDrafts(now)
-		b.members.dropStale(now)
-
+		round(time.Now())
 		select {
 		case <-b.stop:
 			return
 		case <-tick.C:
 		}
 	}
+}
+
+// step runs one part of a maintenance round. A panic in it is logged and
+// leaves the rest of the round, and the rounds after it, running.
+func step(what string, fn func()) {
+	defer guard(what)
+	fn()
+}
+
+// keepTime expires old posts and reminds parties of their start. The cards
+// of the expired posts and the reminders are sent on their own.
+func (b *Bot) keepTime(now time.Time) {
+	step("expiring posts", func() {
+		for _, id := range b.store.ExpireDue(now) {
+			b.scheduleSync(id)
+		}
+	})
+	step("finding due reminders", func() {
+		for _, id := range b.store.DueReminders(b.game.Reminder(), now) {
+			b.syncWG.Add(1)
+			go func() {
+				defer b.syncWG.Done()
+				defer guard("reminding the party of post " + id)
+				b.remind(id)
+			}()
+		}
+	})
+	step("pruning", func() {
+		b.store.PruneRuns(now.Add(-keepRuns))
+		b.dropStaleDrafts(now)
+		b.members.dropStale(now)
+	})
+}
+
+// cleanUp deletes ended posts and archives the threads under the others,
+// those keepTime just expired among them.
+func (b *Bot) cleanUp(now time.Time) {
+	// Posts due for deletion go first: their threads needn't be archived.
+	step("deleting ended posts", func() { b.deleteEnded(now, now.Add(-keepEndedPosts)) })
+	step("archiving threads", func() { b.archiveEnded(now) })
 }
 
 func (b *Bot) guildName(guildID string) string {

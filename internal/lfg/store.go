@@ -853,10 +853,13 @@ type EndedPost struct {
 	Messages []MessageRef
 }
 
-// EndedBefore lists up to limit posts that ended before the cutoff.
-func (s *Store) EndedBefore(cutoff time.Time, limit int) []EndedPost {
-	ids, err := queryIDs(s.db, `SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND closed_at < ?
-		ORDER BY closed_at LIMIT ?`, millis(cutoff), limit)
+// EndedBefore lists up to limit posts that ended before the cutoff, those
+// that ended first first, leaving out the posts to skip.
+func (s *Store) EndedBefore(cutoff time.Time, limit int, skip ...string) []EndedPost {
+	not, args := notIn(skip)
+	args = append([]any{millis(cutoff)}, append(args, limit)...)
+	ids, err := queryIDs(s.db, `SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND closed_at < ?`+not+`
+		ORDER BY closed_at, id LIMIT ?`, args...)
 	if err != nil {
 		log.Printf("store: list ended posts: %v", err)
 		return nil
@@ -869,10 +872,24 @@ func (s *Store) EndedBefore(cutoff time.Time, limit int) []EndedPost {
 }
 
 // ArchiveDue lists up to limit ended posts whose threads aren't archived
-// yet, those that ended first first.
-func (s *Store) ArchiveDue(limit int) []Post {
-	return s.postsWhere(`SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND archived = 0
-		ORDER BY closed_at, id LIMIT ?`, limit)
+// yet, those that ended first first, leaving out the posts to skip.
+func (s *Store) ArchiveDue(limit int, skip ...string) []Post {
+	not, args := notIn(skip)
+	return s.postsWhere(`SELECT id FROM posts WHERE status NOT IN `+activeStatuses+` AND archived = 0`+not+`
+		ORDER BY closed_at, id LIMIT ?`, append(args, limit)...)
+}
+
+// notIn is the condition that leaves the given posts out of a query, and
+// its arguments.
+func notIn(ids []string) (string, []any) {
+	if len(ids) == 0 {
+		return "", nil
+	}
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	return ` AND id NOT IN (?` + strings.Repeat(", ?", len(ids)-1) + `)`, args
 }
 
 // MarkArchived records that the threads under a post that ended at

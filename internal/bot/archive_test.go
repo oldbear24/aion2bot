@@ -85,7 +85,7 @@ func TestThreadsAreArchivedWhenThePostEnds(t *testing.T) {
 	}}
 	b := goneBot(t, f)
 	p := withThreads(t, b)
-	b.archiveEnded()
+	b.archiveEnded(time.Now())
 	if got := archivedThreads(t, f); len(got) != 0 {
 		t.Fatalf("archived %v under an open post", got)
 	}
@@ -98,7 +98,7 @@ func TestThreadsAreArchivedWhenThePostEnds(t *testing.T) {
 		t.Fatalf("archived %v, want the threads under the cards m1 and m2", got)
 	}
 	f.reset()
-	b.archiveEnded()
+	b.archiveEnded(time.Now())
 	if len(f.calls) != 0 {
 		t.Fatalf("archived again: %v", f.calls)
 	}
@@ -117,15 +117,15 @@ func TestThreadsAreArchivedWhenThePostEnds(t *testing.T) {
 	if expired := b.store.ExpireDue(time.Now().Add(2 * time.Hour)); !slices.Equal(expired, []string{p.ID}) {
 		t.Fatalf("expired %v", expired)
 	}
-	b.archiveEnded()
+	b.archiveEnded(time.Now())
 	if got := archivedThreads(t, f); !slices.Equal(got, []string{"m1", "m2"}) {
 		t.Fatalf("archived %v once the post expired", got)
 	}
 }
 
-// A thread that couldn't be archived is tried again in the next maintenance
-// round, but only when that might work: not when it's gone, archived already,
-// or not the bot's to archive, as a player started it or a moderator locked it.
+// A thread that couldn't be archived is tried again a while later, but only
+// when that might work: not when it's gone, archived already, or not the
+// bot's to archive, as a player started it or a moderator locked it.
 func TestArchivingTriesAgainOnlyWhenItMightWork(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -155,22 +155,27 @@ func TestArchivingTriesAgainOnlyWhenItMightWork(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			b.archiveEnded()
+			now := time.Now()
+			b.archiveEnded(now)
 			if got := archivedThreads(t, f); !slices.Equal(got, []string{"m1", "m2"}) {
 				t.Fatalf("archived %v", got)
 			}
 			failing = false
 			f.reset()
-			b.archiveEnded()
+			b.archiveEnded(now.Add(time.Minute))
+			if len(f.calls) != 0 {
+				t.Errorf("the next round didn't wait: %v", f.calls)
+			}
+			b.archiveEnded(now.Add(cleanupRetry))
 			var want []string
 			if c.tryAgain {
 				want = []string{"m1", "m2"}
 			}
 			if got := archivedThreads(t, f); !slices.Equal(got, want) {
-				t.Errorf("the next round archived %v, want %v", got, want)
+				t.Errorf("the round after the wait archived %v, want %v", got, want)
 			}
 			f.reset()
-			b.archiveEnded()
+			b.archiveEnded(now.Add(2 * cleanupRetry))
 			if len(f.calls) != 0 {
 				t.Errorf("a round after that: %v", f.calls)
 			}
